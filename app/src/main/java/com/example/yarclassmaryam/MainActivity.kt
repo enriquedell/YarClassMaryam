@@ -25,25 +25,19 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.Assignment
-import androidx.compose.material.icons.filled.Backup
-import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Star
-import androidx.compose.material.icons.filled.ThumbUp
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -64,12 +58,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.platform.LocalContext
 import org.json.JSONArray
 import org.json.JSONObject
 import java.text.SimpleDateFormat
@@ -80,33 +75,28 @@ private val Cream = Color(0xFFFFF8EC)
 private val Burgundy = Color(0xFF7A1830)
 private val Gold = Color(0xFFC79A35)
 private val Brown = Color(0xFF3B251A)
-private val Green = Color(0xFF3E7D4A)
-private val Red = Color(0xFFB3261E)
-
-class MainActivity : ComponentActivity() {
-
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-
-        setContent {
-            YarClassApp()
-        }
-    }
-}
-
-/* -------------------- DATA -------------------- */
+private val Green = Color(0xFF3E7C59)
+private val Red = Color(0xFFB23A48)
 
 data class Student(
     val id: Long,
-    val firstName: String,
-    val lastName: String,
+    val name: String,
+    val family: String,
     val code: String
 )
 
-data class Homework(
+data class AttendanceRecord(
+    val studentId: Long,
+    val date: String,
+    val status: String
+)
+
+data class Evaluation(
     val id: Long,
-    val title: String,
-    val description: String,
+    val studentId: Long,
+    val lesson: String,
+    val level: String,
+    val note: String,
     val date: String
 )
 
@@ -117,126 +107,164 @@ data class ScheduleItem(
     val lesson: String
 )
 
+data class Homework(
+    val id: Long,
+    val title: String,
+    val description: String,
+    val date: String,
+    val done: Boolean
+)
+
 data class Exam(
     val id: Long,
     val title: String,
-    val subject: String,
-    val questions: Int
+    val subject: String
 )
 
-/* -------------------- STORAGE -------------------- */
+data class ExamQuestion(
+    val id: Long,
+    val examId: Long,
+    val question: String,
+    val answer: String
+)
 
-object AppStorage {
+private fun today(): String {
+    return SimpleDateFormat("yyyy/MM/dd", Locale.US).format(Date())
+}
 
-    private const val PREFS = "yar_class_data"
-    private const val STUDENTS = "students"
-    private const val HOMEWORKS = "homeworks"
-    private const val SCHEDULES = "schedules"
-    private const val EXAMS = "exams"
-    private const val ATTENDANCE = "attendance"
+private fun newId(): Long = System.currentTimeMillis()
 
-    private fun prefs(context: Context) =
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+class AppStorage(context: Context) {
 
-    fun loadStudents(context: Context): List<Student> {
-        val text = prefs(context).getString(STUDENTS, "[]") ?: "[]"
-        val array = JSONArray(text)
+    private val prefs =
+        context.getSharedPreferences("yar_class_storage", Context.MODE_PRIVATE)
+
+    fun loadStudents(): MutableList<Student> {
         val result = mutableListOf<Student>()
+        val array = JSONArray(prefs.getString("students", "[]") ?: "[]")
 
         for (i in 0 until array.length()) {
             val o = array.getJSONObject(i)
             result.add(
                 Student(
-                    id = o.getLong("id"),
-                    firstName = o.getString("firstName"),
-                    lastName = o.getString("lastName"),
-                    code = o.getString("code")
+                    o.getLong("id"),
+                    o.getString("name"),
+                    o.getString("family"),
+                    o.getString("code")
                 )
             )
         }
-
         return result
     }
 
-    fun saveStudents(context: Context, students: List<Student>) {
-        val array = JSONArray()
-
-        students.forEach {
-            array.put(
-                JSONObject().apply {
-                    put("id", it.id)
-                    put("firstName", it.firstName)
-                    put("lastName", it.lastName)
-                    put("code", it.code)
-                }
-            )
-        }
-
-        prefs(context).edit()
-            .putString(STUDENTS, array.toString())
-            .apply()
-    }
-
-    fun loadHomework(context: Context): List<Homework> {
-        val text = prefs(context).getString(HOMEWORKS, "[]") ?: "[]"
-        val array = JSONArray(text)
-        val result = mutableListOf<Homework>()
-
-        for (i in 0 until array.length()) {
-            val o = array.getJSONObject(i)
-            result.add(
-                Homework(
-                    id = o.getLong("id"),
-                    title = o.getString("title"),
-                    description = o.getString("description"),
-                    date = o.getString("date")
-                )
-            )
-        }
-
-        return result
-    }
-
-    fun saveHomework(context: Context, list: List<Homework>) {
+    fun saveStudents(list: List<Student>) {
         val array = JSONArray()
 
         list.forEach {
             array.put(
                 JSONObject().apply {
                     put("id", it.id)
-                    put("title", it.title)
-                    put("description", it.description)
+                    put("name", it.name)
+                    put("family", it.family)
+                    put("code", it.code)
+                }
+            )
+        }
+
+        prefs.edit().putString("students", array.toString()).apply()
+    }
+
+    fun loadAttendance(): MutableList<AttendanceRecord> {
+        val result = mutableListOf<AttendanceRecord>()
+        val array = JSONArray(prefs.getString("attendance", "[]") ?: "[]")
+
+        for (i in 0 until array.length()) {
+            val o = array.getJSONObject(i)
+            result.add(
+                AttendanceRecord(
+                    o.getLong("studentId"),
+                    o.getString("date"),
+                    o.getString("status")
+                )
+            )
+        }
+        return result
+    }
+
+    fun saveAttendance(list: List<AttendanceRecord>) {
+        val array = JSONArray()
+
+        list.forEach {
+            array.put(
+                JSONObject().apply {
+                    put("studentId", it.studentId)
+                    put("date", it.date)
+                    put("status", it.status)
+                }
+            )
+        }
+
+        prefs.edit().putString("attendance", array.toString()).apply()
+    }
+
+    fun loadEvaluations(): MutableList<Evaluation> {
+        val result = mutableListOf<Evaluation>()
+        val array = JSONArray(prefs.getString("evaluations", "[]") ?: "[]")
+
+        for (i in 0 until array.length()) {
+            val o = array.getJSONObject(i)
+            result.add(
+                Evaluation(
+                    o.getLong("id"),
+                    o.getLong("studentId"),
+                    o.getString("lesson"),
+                    o.getString("level"),
+                    o.getString("note"),
+                    o.getString("date")
+                )
+            )
+        }
+        return result
+    }
+
+    fun saveEvaluations(list: List<Evaluation>) {
+        val array = JSONArray()
+
+        list.forEach {
+            array.put(
+                JSONObject().apply {
+                    put("id", it.id)
+                    put("studentId", it.studentId)
+                    put("lesson", it.lesson)
+                    put("level", it.level)
+                    put("note", it.note)
                     put("date", it.date)
                 }
             )
         }
 
-        prefs(context).edit()
-            .putString(HOMEWORKS, array.toString())
-            .apply()
+        prefs.edit().putString("evaluations", array.toString()).apply()
     }
 
-    fun loadSchedules(context: Context): List<ScheduleItem> {
-        val text = prefs(context).getString(SCHEDULES, "[]") ?: "[]"
-        val array = JSONArray(text)
+    fun loadSchedule(): MutableList<ScheduleItem> {
         val result = mutableListOf<ScheduleItem>()
+        val array = JSONArray(prefs.getString("schedule", "[]") ?: "[]")
 
         for (i in 0 until array.length()) {
             val o = array.getJSONObject(i)
             result.add(
                 ScheduleItem(
-                    id = o.getLong("id"),
-                    day = o.getString("day"),
-                    time = o.getString("time"),
-                    lesson = o.getString("lesson")
+                    o.getLong("id"),
+                    o.getString("day"),
+                    o.getString("time"),
+                    o.getString("lesson")
                 )
             )
         }
-
         return result
     }
 
-    fun saveSchedules(context: Context, list: List<ScheduleItem>) {
+    fun saveSchedule(list: List<ScheduleItem>) {
         val array = JSONArray()
 
         list.forEach {
@@ -250,32 +278,64 @@ object AppStorage {
             )
         }
 
-        prefs(context).edit()
-            .putString(SCHEDULES, array.toString())
-            .apply()
+        prefs.edit().putString("schedule", array.toString()).apply()
     }
 
-    fun loadExams(context: Context): List<Exam> {
-        val text = prefs(context).getString(EXAMS, "[]") ?: "[]"
-        val array = JSONArray(text)
+    fun loadHomework(): MutableList<Homework> {
+        val result = mutableListOf<Homework>()
+        val array = JSONArray(prefs.getString("homework", "[]") ?: "[]")
+
+        for (i in 0 until array.length()) {
+            val o = array.getJSONObject(i)
+            result.add(
+                Homework(
+                    o.getLong("id"),
+                    o.getString("title"),
+                    o.getString("description"),
+                    o.getString("date"),
+                    o.getBoolean("done")
+                )
+            )
+        }
+        return result
+    }
+
+    fun saveHomework(list: List<Homework>) {
+        val array = JSONArray()
+
+        list.forEach {
+            array.put(
+                JSONObject().apply {
+                    put("id", it.id)
+                    put("title", it.title)
+                    put("description", it.description)
+                    put("date", it.date)
+                    put("done", it.done)
+                }
+            )
+        }
+
+        prefs.edit().putString("homework", array.toString()).apply()
+    }
+
+    fun loadExams(): MutableList<Exam> {
         val result = mutableListOf<Exam>()
+        val array = JSONArray(prefs.getString("exams", "[]") ?: "[]")
 
         for (i in 0 until array.length()) {
             val o = array.getJSONObject(i)
             result.add(
                 Exam(
-                    id = o.getLong("id"),
-                    title = o.getString("title"),
-                    subject = o.getString("subject"),
-                    questions = o.getInt("questions")
+                    o.getLong("id"),
+                    o.getString("title"),
+                    o.getString("subject")
                 )
             )
         }
-
         return result
     }
 
-    fun saveExams(context: Context, list: List<Exam>) {
+    fun saveExams(list: List<Exam>) {
         val array = JSONArray()
 
         list.forEach {
@@ -284,94 +344,101 @@ object AppStorage {
                     put("id", it.id)
                     put("title", it.title)
                     put("subject", it.subject)
-                    put("questions", it.questions)
                 }
             )
         }
 
-        prefs(context).edit()
-            .putString(EXAMS, array.toString())
-            .apply()
+        prefs.edit().putString("exams", array.toString()).apply()
     }
 
-    fun setAttendance(
-        context: Context,
-        studentId: Long,
-        status: String
-    ) {
-        val date = SimpleDateFormat(
-            "yyyy-MM-dd",
-            Locale.US
-        ).format(Date())
+    fun loadQuestions(): MutableList<ExamQuestion> {
+        val result = mutableListOf<ExamQuestion>()
+        val array = JSONArray(prefs.getString("questions", "[]") ?: "[]")
 
-        val key = "$ATTENDANCE-$date-$studentId"
-
-        prefs(context).edit()
-            .putString(key, status)
-            .apply()
+        for (i in 0 until array.length()) {
+            val o = array.getJSONObject(i)
+            result.add(
+                ExamQuestion(
+                    o.getLong("id"),
+                    o.getLong("examId"),
+                    o.getString("question"),
+                    o.getString("answer")
+                )
+            )
+        }
+        return result
     }
 
-    fun getAttendance(
-        context: Context,
-        studentId: Long
-    ): String {
-        val date = SimpleDateFormat(
-            "yyyy-MM-dd",
-            Locale.US
-        ).format(Date())
+    fun saveQuestions(list: List<ExamQuestion>) {
+        val array = JSONArray()
 
-        val key = "$ATTENDANCE-$date-$studentId"
+        list.forEach {
+            array.put(
+                JSONObject().apply {
+                    put("id", it.id)
+                    put("examId", it.examId)
+                    put("question", it.question)
+                    put("answer", it.answer)
+                }
+            )
+        }
 
-        return prefs(context).getString(key, "ثبت نشده") ?: "ثبت نشده"
+        prefs.edit().putString("questions", array.toString()).apply()
     }
 
-    fun backupText(context: Context): String {
-        val root = JSONObject()
+    fun exportBackup(): String {
+        return JSONObject().apply {
+            put("students", JSONArray(prefs.getString("students", "[]")))
+            put("attendance", JSONArray(prefs.getString("attendance", "[]")))
+            put("evaluations", JSONArray(prefs.getString("evaluations", "[]")))
+            put("schedule", JSONArray(prefs.getString("schedule", "[]")))
+            put("homework", JSONArray(prefs.getString("homework", "[]")))
+            put("exams", JSONArray(prefs.getString("exams", "[]")))
+            put("questions", JSONArray(prefs.getString("questions", "[]")))
+        }.toString()
+    }
 
-        root.put(
-            "students",
-            JSONArray(
-                prefs(context).getString(STUDENTS, "[]")
-            )
-        )
+    fun restoreBackup(text: String): Boolean {
+        return try {
+            val o = JSONObject(text)
 
-        root.put(
-            "homeworks",
-            JSONArray(
-                prefs(context).getString(HOMEWORKS, "[]")
-            )
-        )
+            prefs.edit()
+                .putString("students", o.getJSONArray("students").toString())
+                .putString("attendance", o.getJSONArray("attendance").toString())
+                .putString("evaluations", o.getJSONArray("evaluations").toString())
+                .putString("schedule", o.getJSONArray("schedule").toString())
+                .putString("homework", o.getJSONArray("homework").toString())
+                .putString("exams", o.getJSONArray("exams").toString())
+                .putString("questions", o.getJSONArray("questions").toString())
+                .apply()
 
-        root.put(
-            "schedules",
-            JSONArray(
-                prefs(context).getString(SCHEDULES, "[]")
-            )
-        )
-
-        root.put(
-            "exams",
-            JSONArray(
-                prefs(context).getString(EXAMS, "[]")
-            )
-        )
-
-        return root.toString(2)
+            true
+        } catch (_: Exception) {
+            false
+        }
     }
 }
 
-/* -------------------- APP -------------------- */
+class MainActivity : ComponentActivity() {
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+
+        setContent {
+            CompositionLocalProvider(
+                androidx.compose.ui.platform.LocalLayoutDirection provides LayoutDirection.Rtl
+            ) {
+                YarClassApp()
+            }
+        }
+    }
+}
 
 @Composable
 fun YarClassApp() {
 
-    var loggedIn by remember {
-        mutableStateOf(false)
-    }
-
-    var password by remember {
-        mutableStateOf("")
-    }
+    var loggedIn by remember { mutableStateOf(false) }
+    var password by remember { mutableStateOf("") }
 
     MaterialTheme(
         colorScheme = lightColorScheme(
@@ -386,9 +453,7 @@ fun YarClassApp() {
 
             LoginScreen(
                 password = password,
-                onPasswordChange = {
-                    password = it
-                },
+                onPasswordChange = { password = it },
                 onLogin = {
                     if (password == "1234") {
                         loggedIn = true
@@ -398,12 +463,15 @@ fun YarClassApp() {
 
         } else {
 
-            HomeScreen()
+            HomeScreen(
+                onLogout = {
+                    loggedIn = false
+                    password = ""
+                }
+            )
         }
     }
 }
-
-/* -------------------- LOGIN -------------------- */
 
 @Composable
 fun LoginScreen(
@@ -431,7 +499,7 @@ fun LoginScreen(
                 fontSize = 60.sp
             )
 
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(8.dp))
 
             Text(
                 text = "ماه زیبا، سلام",
@@ -440,15 +508,13 @@ fun LoginScreen(
                 fontWeight = FontWeight.Bold
             )
 
-            Spacer(modifier = Modifier.height(6.dp))
-
             Text(
                 text = "به یارِ کلاس مریم خوش آمدید",
                 color = Brown,
                 fontSize = 17.sp
             )
 
-            Spacer(modifier = Modifier.height(28.dp))
+            Spacer(modifier = Modifier.height(25.dp))
 
             Card(
                 modifier = Modifier.size(150.dp),
@@ -477,9 +543,7 @@ fun LoginScreen(
             OutlinedTextField(
                 value = password,
                 onValueChange = onPasswordChange,
-                label = {
-                    Text("رمز ورود")
-                },
+                label = { Text("رمز ورود") },
                 singleLine = true,
                 leadingIcon = {
                     Icon(
@@ -500,7 +564,7 @@ fun LoginScreen(
                 )
             ) {
                 Text(
-                    text = "ورود به برنامه",
+                    "ورود به برنامه",
                     fontSize = 17.sp
                 )
             }
@@ -508,7 +572,7 @@ fun LoginScreen(
             Spacer(modifier = Modifier.height(10.dp))
 
             Text(
-                text = "رمز اولیه: 1234",
+                "رمز اولیه: 1234",
                 color = Color.Gray,
                 fontSize = 12.sp
             )
@@ -516,108 +580,61 @@ fun LoginScreen(
     }
 }
 
-/* -------------------- MENU -------------------- */
-
 data class MenuItem(
     val title: String,
-    val icon: ImageVector
+    val icon: androidx.compose.ui.graphics.vector.ImageVector
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun HomeScreen() {
+fun HomeScreen(
+    onLogout: () -> Unit
+) {
 
-    var selected by remember {
-        mutableStateOf<String?>(null)
-    }
+    var selected by remember { mutableStateOf<String?>(null) }
 
     val menuItems = listOf(
-
-        MenuItem(
-            "دانش‌آموزان",
-            Icons.Default.Person
-        ),
-
-        MenuItem(
-            "حضور و غیاب",
-            Icons.Default.CheckCircle
-        ),
-
-        MenuItem(
-            "ارزشیابی توصیفی",
-            Icons.Default.Star
-        ),
-
-        MenuItem(
-            "برنامه هفتگی",
-            Icons.Default.CalendarMonth
-        ),
-
-        MenuItem(
-            "آزمون‌ساز",
-            Icons.Default.Assignment
-        ),
-
-        MenuItem(
-            "تکالیف و یادداشت‌ها",
-            Icons.Default.Edit
-        ),
-
-        MenuItem(
-            "گزارش‌ها",
-            Icons.Default.ThumbUp
-        ),
-
-        MenuItem(
-            "خط تحریری",
-            Icons.Default.Edit
-        ),
-
-        MenuItem(
-            "پشتیبان‌گیری",
-            Icons.Default.Backup
-        )
+        MenuItem("دانش‌آموزان", Icons.Default.Person),
+        MenuItem("حضور و غیاب", Icons.Default.CheckCircle),
+        MenuItem("ارزشیابی توصیفی", Icons.Default.Star),
+        MenuItem("برنامه هفتگی", Icons.Default.DateRange),
+        MenuItem("آزمون‌ساز", Icons.Default.Edit),
+        MenuItem("تکالیف و یادداشت‌ها", Icons.Default.Edit),
+        MenuItem("گزارش‌ها", Icons.Default.CheckCircle),
+        MenuItem("خط تحریری", Icons.Default.Edit),
+        MenuItem("پشتیبان‌گیری", Icons.Default.CheckCircle)
     )
 
     if (selected != null) {
 
         when (selected) {
 
-            "دانش‌آموزان" -> StudentsScreen {
-                selected = null
-            }
+            "دانش‌آموزان" ->
+                StudentsScreen { selected = null }
 
-            "حضور و غیاب" -> AttendanceScreen {
-                selected = null
-            }
+            "حضور و غیاب" ->
+                AttendanceScreen { selected = null }
 
-            "ارزشیابی توصیفی" -> EvaluationScreen {
-                selected = null
-            }
+            "ارزشیابی توصیفی" ->
+                EvaluationScreen { selected = null }
 
-            "برنامه هفتگی" -> ScheduleScreen {
-                selected = null
-            }
+            "برنامه هفتگی" ->
+                ScheduleScreen { selected = null }
 
-            "آزمون‌ساز" -> ExamScreen {
-                selected = null
-            }
+            "آزمون‌ساز" ->
+                ExamScreen { selected = null }
 
-            "تکالیف و یادداشت‌ها" -> HomeworkScreen {
-                selected = null
-            }
+            "تکالیف و یادداشت‌ها" ->
+                HomeworkScreen { selected = null }
 
-            "گزارش‌ها" -> ReportsScreen {
-                selected = null
-            }
+            "گزارش‌ها" ->
+                ReportsScreen { selected = null }
 
-            "خط تحریری" -> HandwritingScreen {
-                selected = null
-            }
+            "خط تحریری" ->
+                HandwritingScreen { selected = null }
 
-            "پشتیبان‌گیری" -> BackupScreen {
-                selected = null
-            }
+            "پشتیبان‌گیری" ->
+                BackupScreen { selected = null }
         }
 
         return
@@ -631,6 +648,14 @@ fun HomeScreen() {
                         "یارِ کلاس مریم",
                         fontWeight = FontWeight.Bold
                     )
+                },
+                actions = {
+                    TextButton(onClick = onLogout) {
+                        Text(
+                            "خروج",
+                            color = Color.White
+                        )
+                    }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = Burgundy,
@@ -650,7 +675,10 @@ fun HomeScreen() {
 
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(24.dp)
+                shape = RoundedCornerShape(24.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = Color.White
+                )
             ) {
 
                 Row(
@@ -691,15 +719,11 @@ fun HomeScreen() {
                             fontWeight = FontWeight.Bold
                         )
 
-                        Spacer(modifier = Modifier.height(4.dp))
-
                         Text(
                             "دستیار هوشمند معلم پایه ششم",
                             color = Brown,
                             fontSize = 14.sp
                         )
-
-                        Spacer(modifier = Modifier.height(4.dp))
 
                         Text(
                             "مدیریت کلاس • دانش‌آموزان • ارزیابی",
@@ -737,7 +761,10 @@ fun HomeScreen() {
                             .clickable {
                                 selected = item.title
                             },
-                        shape = RoundedCornerShape(20.dp)
+                        shape = RoundedCornerShape(20.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = Color.White
+                        )
                     ) {
 
                         Column(
@@ -771,7 +798,7 @@ fun HomeScreen() {
     }
 }
 
-/* -------------------- STUDENTS -------------------- */
+/* ---------------- دانش‌آموزان ---------------- */
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -780,34 +807,27 @@ fun StudentsScreen(
 ) {
 
     val context = LocalContext.current
+    val storage = remember { AppStorage(context) }
 
     var students by remember {
-        mutableStateOf(AppStorage.loadStudents(context))
+        mutableStateOf(storage.loadStudents())
     }
 
-    var search by remember {
-        mutableStateOf("")
-    }
+    var search by remember { mutableStateOf("") }
+    var showAdd by remember { mutableStateOf(false) }
 
-    var showDialog by remember {
-        mutableStateOf(false)
-    }
-
-    var editStudent by remember {
-        mutableStateOf<Student?>(null)
-    }
+    var name by remember { mutableStateOf("") }
+    var family by remember { mutableStateOf("") }
+    var code by remember { mutableStateOf("") }
 
     val filtered = students.filter {
-        "${it.firstName} ${it.lastName} ${it.code}"
-            .contains(search, ignoreCase = true)
+        "${it.name} ${it.family} ${it.code}".contains(search)
     }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = {
-                    Text("دانش‌آموزان")
-                },
+                title = { Text("دانش‌آموزان") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(
@@ -816,24 +836,10 @@ fun StudentsScreen(
                         )
                     }
                 },
-                actions = {
-                    IconButton(
-                        onClick = {
-                            editStudent = null
-                            showDialog = true
-                        }
-                    ) {
-                        Icon(
-                            Icons.Default.Add,
-                            contentDescription = "افزودن"
-                        )
-                    }
-                },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = Burgundy,
                     titleContentColor = Color.White,
-                    navigationIconContentColor = Color.White,
-                    actionIconContentColor = Color.White
+                    navigationIconContentColor = Color.White
                 )
             )
         }
@@ -849,23 +855,29 @@ fun StudentsScreen(
 
             OutlinedTextField(
                 value = search,
-                onValueChange = {
-                    search = it
-                },
-                modifier = Modifier.fillMaxWidth(),
-                label = {
-                    Text("جست‌وجوی دانش‌آموز")
-                },
-                leadingIcon = {
-                    Icon(
-                        Icons.Default.Search,
-                        contentDescription = "جست‌وجو"
-                    )
-                },
-                singleLine = true
+                onValueChange = { search = it },
+                label = { Text("جستجوی دانش‌آموز") },
+                modifier = Modifier.fillMaxWidth()
             )
 
-            Spacer(modifier = Modifier.height(14.dp))
+            Spacer(modifier = Modifier.height(10.dp))
+
+            Button(
+                onClick = {
+                    name = ""
+                    family = ""
+                    code = ""
+                    showAdd = true
+                },
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Burgundy
+                )
+            ) {
+                Text("＋ افزودن دانش‌آموز")
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
 
             Text(
                 "تعداد دانش‌آموزان: ${students.size}",
@@ -873,122 +885,59 @@ fun StudentsScreen(
                 fontWeight = FontWeight.Bold
             )
 
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(8.dp))
 
-            if (filtered.isEmpty()) {
+            LazyColumn(
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxSize()
+            ) {
 
-                Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
-                ) {
+                items(filtered, key = { it.id }) { student ->
 
-                    Text(
-                        "هنوز دانش‌آموزی ثبت نشده است.\nاز دکمه + استفاده کنید.",
-                        textAlign = TextAlign.Center,
-                        color = Brown
-                    )
-                }
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = Color.White
+                        )
+                    ) {
 
-            } else {
-
-                LazyColumn(
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
-                    modifier = Modifier.fillMaxSize()
-                ) {
-
-                    items(
-                        filtered,
-                        key = { it.id }
-                    ) { student ->
-
-                        Card(
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(18.dp)
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(14.dp),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
 
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(14.dp),
-                                verticalAlignment = Alignment.CenterVertically
+                            Column(
+                                modifier = Modifier.weight(1f)
                             ) {
 
-                                Card(
-                                    modifier = Modifier.size(52.dp),
-                                    shape = RoundedCornerShape(15.dp),
-                                    colors = CardDefaults.cardColors(
-                                        containerColor = Burgundy
-                                    )
-                                ) {
+                                Text(
+                                    "${student.name} ${student.family}",
+                                    color = Brown,
+                                    fontSize = 18.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
 
-                                    Box(
-                                        modifier = Modifier.fillMaxSize(),
-                                        contentAlignment = Alignment.Center
-                                    ) {
+                                Text(
+                                    "کد دانش‌آموزی: ${student.code}",
+                                    color = Color.Gray
+                                )
+                            }
 
-                                        Text(
-                                            student.firstName
-                                                .take(1),
-                                            color = Color.White,
-                                            fontSize = 22.sp,
-                                            fontWeight = FontWeight.Bold
-                                        )
-                                    }
+                            TextButton(
+                                onClick = {
+                                    students =
+                                        students.filter { it.id != student.id }
+                                            .toMutableList()
+                                    storage.saveStudents(students)
                                 }
-
-                                Spacer(modifier = Modifier.width(12.dp))
-
-                                Column(
-                                    modifier = Modifier.weight(1f)
-                                ) {
-
-                                    Text(
-                                        "${student.firstName} ${student.lastName}",
-                                        fontSize = 17.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = Brown
-                                    )
-
-                                    Text(
-                                        "کد: ${student.code}",
-                                        color = Color.Gray,
-                                        fontSize = 13.sp
-                                    )
-                                }
-
-                                IconButton(
-                                    onClick = {
-                                        editStudent = student
-                                        showDialog = true
-                                    }
-                                ) {
-                                    Icon(
-                                        Icons.Default.Edit,
-                                        contentDescription = "ویرایش",
-                                        tint = Burgundy
-                                    )
-                                }
-
-                                IconButton(
-                                    onClick = {
-
-                                        students =
-                                            students.filter {
-                                                it.id != student.id
-                                            }
-
-                                        AppStorage.saveStudents(
-                                            context,
-                                            students
-                                        )
-                                    }
-                                ) {
-                                    Icon(
-                                        Icons.Default.Delete,
-                                        contentDescription = "حذف",
-                                        tint = Red
-                                    )
-                                }
+                            ) {
+                                Text(
+                                    "حذف",
+                                    color = Red
+                                )
                             }
                         }
                     }
@@ -997,154 +946,86 @@ fun StudentsScreen(
         }
     }
 
-    if (showDialog) {
+    if (showAdd) {
 
-        StudentDialog(
-            student = editStudent,
-            onDismiss = {
-                showDialog = false
+        AlertDialog(
+            onDismissRequest = {
+                showAdd = false
             },
-            onSave = { firstName, lastName, code ->
+            title = {
+                Text("افزودن دانش‌آموز")
+            },
+            text = {
 
-                if (editStudent == null) {
+                Column {
 
-                    val newStudent = Student(
-                        id = System.currentTimeMillis(),
-                        firstName = firstName,
-                        lastName = lastName,
-                        code = code
+                    OutlinedTextField(
+                        value = name,
+                        onValueChange = { name = it },
+                        label = { Text("نام") },
+                        modifier = Modifier.fillMaxWidth()
                     )
 
-                    students = students + newStudent
+                    Spacer(modifier = Modifier.height(8.dp))
 
-                } else {
+                    OutlinedTextField(
+                        value = family,
+                        onValueChange = { family = it },
+                        label = { Text("نام خانوادگی") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
 
-                    students = students.map {
+                    Spacer(modifier = Modifier.height(8.dp))
 
-                        if (it.id == editStudent!!.id) {
-                            it.copy(
-                                firstName = firstName,
-                                lastName = lastName,
-                                code = code
+                    OutlinedTextField(
+                        value = code,
+                        onValueChange = { code = it },
+                        label = { Text("کد دانش‌آموزی") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+
+                TextButton(
+                    onClick = {
+
+                        if (name.isNotBlank() && family.isNotBlank()) {
+
+                            val newStudent = Student(
+                                newId(),
+                                name,
+                                family,
+                                code
                             )
-                        } else {
-                            it
+
+                            students =
+                                (students + newStudent).toMutableList()
+
+                            storage.saveStudents(students)
+
+                            showAdd = false
                         }
                     }
+                ) {
+                    Text("ذخیره")
                 }
+            },
+            dismissButton = {
 
-                AppStorage.saveStudents(
-                    context,
-                    students
-                )
-
-                showDialog = false
+                TextButton(
+                    onClick = {
+                        showAdd = false
+                    }
+                ) {
+                    Text("انصراف")
+                }
             }
         )
     }
 }
 
-@Composable
-fun StudentDialog(
-    student: Student?,
-    onDismiss: () -> Unit,
-    onSave: (String, String, String) -> Unit
-) {
-
-    var firstName by remember {
-        mutableStateOf(student?.firstName ?: "")
-    }
-
-    var lastName by remember {
-        mutableStateOf(student?.lastName ?: "")
-    }
-
-    var code by remember {
-        mutableStateOf(student?.code ?: "")
-    }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = {
-            Text(
-                if (student == null)
-                    "افزودن دانش‌آموز"
-                else
-                    "ویرایش دانش‌آموز"
-            )
-        },
-        text = {
-
-            Column {
-
-                OutlinedTextField(
-                    value = firstName,
-                    onValueChange = {
-                        firstName = it
-                    },
-                    label = {
-                        Text("نام")
-                    },
-                    singleLine = true
-                )
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                OutlinedTextField(
-                    value = lastName,
-                    onValueChange = {
-                        lastName = it
-                    },
-                    label = {
-                        Text("نام خانوادگی")
-                    },
-                    singleLine = true
-                )
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                OutlinedTextField(
-                    value = code,
-                    onValueChange = {
-                        code = it
-                    },
-                    label = {
-                        Text("کد دانش‌آموزی")
-                    },
-                    singleLine = true
-                )
-            }
-        },
-        confirmButton = {
-
-            TextButton(
-                onClick = {
-                    if (
-                        firstName.isNotBlank() &&
-                        lastName.isNotBlank()
-                    ) {
-                        onSave(
-                            firstName.trim(),
-                            lastName.trim(),
-                            code.trim()
-                        )
-                    }
-                }
-            ) {
-                Text("ذخیره")
-            }
-        },
-        dismissButton = {
-            TextButton(
-                onClick = onDismiss
-            ) {
-                Text("انصراف")
-            }
-        }
-    )
-}
-
-/* -------------------- ATTENDANCE -------------------- */
+/* ---------------- حضور و غیاب ---------------- */
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -1153,21 +1034,22 @@ fun AttendanceScreen(
 ) {
 
     val context = LocalContext.current
+    val storage = remember { AppStorage(context) }
 
-    val students = remember {
-        mutableStateOf(AppStorage.loadStudents(context))
+    var students by remember {
+        mutableStateOf(storage.loadStudents())
     }
 
-    var refresh by remember {
-        mutableStateOf(0)
+    var records by remember {
+        mutableStateOf(storage.loadAttendance())
     }
+
+    var date by remember { mutableStateOf(today()) }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = {
-                    Text("حضور و غیاب امروز")
-                },
+                title = { Text("حضور و غیاب") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(
@@ -1193,48 +1075,54 @@ fun AttendanceScreen(
                 .padding(16.dp)
         ) {
 
-            if (students.value.isEmpty()) {
+            OutlinedTextField(
+                value = date,
+                onValueChange = { date = it },
+                label = { Text("تاریخ") },
+                modifier = Modifier.fillMaxWidth()
+            )
 
-                Text(
-                    "ابتدا از بخش «دانش‌آموزان» دانش‌آموز اضافه کنید.",
-                    color = Brown
-                )
+            Spacer(modifier = Modifier.height(10.dp))
+
+            if (students.isEmpty()) {
+
+                EmptyMessage("ابتدا از بخش دانش‌آموزان، دانش‌آموز اضافه کنید.")
 
             } else {
 
                 LazyColumn(
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxSize()
                 ) {
 
-                    items(
-                        students.value,
-                        key = { it.id }
-                    ) { student ->
+                    items(students, key = { it.id }) { student ->
 
-                        val status =
-                            AppStorage.getAttendance(
-                                context,
-                                student.id
-                            )
+                        val current =
+                            records.find {
+                                it.studentId == student.id &&
+                                        it.date == date
+                            }?.status
 
                         Card(
                             modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(18.dp)
+                            shape = RoundedCornerShape(16.dp),
+                            colors = CardDefaults.cardColors(
+                                containerColor = Color.White
+                            )
                         ) {
 
                             Column(
-                                modifier = Modifier.padding(14.dp)
+                                modifier = Modifier.padding(12.dp)
                             ) {
 
                                 Text(
-                                    "${student.firstName} ${student.lastName}",
+                                    "${student.name} ${student.family}",
+                                    fontSize = 17.sp,
                                     fontWeight = FontWeight.Bold,
-                                    fontSize = 17.sp
+                                    color = Brown
                                 )
 
-                                Spacer(
-                                    modifier = Modifier.height(8.dp)
-                                )
+                                Spacer(modifier = Modifier.height(8.dp))
 
                                 Row(
                                     horizontalArrangement =
@@ -1242,51 +1130,47 @@ fun AttendanceScreen(
                                 ) {
 
                                     AttendanceButton(
-                                        text = "حاضر",
-                                        selected = status == "حاضر"
+                                        "حاضر",
+                                        current == "حاضر",
+                                        Green
                                     ) {
-                                        AppStorage.setAttendance(
-                                            context,
+                                        records = setAttendance(
+                                            records,
                                             student.id,
+                                            date,
                                             "حاضر"
                                         )
-                                        refresh++
+                                        storage.saveAttendance(records)
                                     }
 
                                     AttendanceButton(
-                                        text = "غایب",
-                                        selected = status == "غایب"
+                                        "غایب",
+                                        current == "غایب",
+                                        Red
                                     ) {
-                                        AppStorage.setAttendance(
-                                            context,
+                                        records = setAttendance(
+                                            records,
                                             student.id,
+                                            date,
                                             "غایب"
                                         )
-                                        refresh++
+                                        storage.saveAttendance(records)
                                     }
 
                                     AttendanceButton(
-                                        text = "تأخیر",
-                                        selected = status == "تأخیر"
+                                        "تأخیر",
+                                        current == "تأخیر",
+                                        Gold
                                     ) {
-                                        AppStorage.setAttendance(
-                                            context,
+                                        records = setAttendance(
+                                            records,
                                             student.id,
+                                            date,
                                             "تأخیر"
                                         )
-                                        refresh++
+                                        storage.saveAttendance(records)
                                     }
                                 }
-
-                                Spacer(
-                                    modifier = Modifier.height(6.dp)
-                                )
-
-                                Text(
-                                    "وضعیت: $status",
-                                    color = Burgundy,
-                                    fontSize = 13.sp
-                                )
                             }
                         }
                     }
@@ -1296,34 +1180,53 @@ fun AttendanceScreen(
     }
 }
 
+fun setAttendance(
+    records: List<AttendanceRecord>,
+    studentId: Long,
+    date: String,
+    status: String
+): MutableList<AttendanceRecord> {
+
+    val result =
+        records.filterNot {
+            it.studentId == studentId && it.date == date
+        }.toMutableList()
+
+    result.add(
+        AttendanceRecord(
+            studentId,
+            date,
+            status
+        )
+    )
+
+    return result
+}
+
 @Composable
 fun AttendanceButton(
-    text: String,
+    title: String,
     selected: Boolean,
+    color: Color,
     onClick: () -> Unit
 ) {
 
-    if (selected) {
-
-        Button(
-            onClick = onClick,
-            contentPadding = ButtonDefaults.ContentPadding
-        ) {
-            Text(text)
-        }
-
-    } else {
-
-        OutlinedButton(
-            onClick = onClick,
-            contentPadding = ButtonDefaults.ContentPadding
-        ) {
-            Text(text)
-        }
+    Button(
+        onClick = onClick,
+        colors = ButtonDefaults.buttonColors(
+            containerColor =
+                if (selected) color else Color.LightGray
+        )
+    ) {
+        Text(
+            title,
+            color =
+                if (selected) Color.White else Brown
+        )
     }
 }
 
-/* -------------------- EVALUATION -------------------- */
+/* ---------------- ارزشیابی ---------------- */
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -1332,33 +1235,25 @@ fun EvaluationScreen(
 ) {
 
     val context = LocalContext.current
+    val storage = remember { AppStorage(context) }
 
-    val students = remember {
-        AppStorage.loadStudents(context)
+    var students by remember {
+        mutableStateOf(storage.loadStudents())
     }
 
-    var selectedStudent by remember {
-        mutableStateOf<Student?>(null)
+    var evaluations by remember {
+        mutableStateOf(storage.loadEvaluations())
     }
 
-    var lesson by remember {
-        mutableStateOf("")
-    }
-
-    var level by remember {
-        mutableStateOf("")
-    }
-
-    var description by remember {
-        mutableStateOf("")
-    }
+    var selectedStudent by remember { mutableStateOf<Long?>(null) }
+    var lesson by remember { mutableStateOf("") }
+    var level by remember { mutableStateOf("خوب") }
+    var note by remember { mutableStateOf("") }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = {
-                    Text("ارزشیابی توصیفی")
-                },
+                title = { Text("ارزشیابی توصیفی") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(
@@ -1376,84 +1271,78 @@ fun EvaluationScreen(
         }
     ) { padding ->
 
-        LazyColumn(
+        Column(
             modifier = Modifier
                 .fillMaxSize()
                 .background(Cream)
                 .padding(padding)
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+                .padding(16.dp)
         ) {
 
-            item {
+            Text(
+                "انتخاب دانش‌آموز",
+                color = Burgundy,
+                fontWeight = FontWeight.Bold
+            )
 
-                Text(
-                    "دانش‌آموز",
-                    fontWeight = FontWeight.Bold,
-                    color = Burgundy
-                )
+            Spacer(modifier = Modifier.height(8.dp))
 
-                Spacer(modifier = Modifier.height(6.dp))
+            if (students.isEmpty()) {
 
-                if (students.isEmpty()) {
+                EmptyMessage("هنوز دانش‌آموزی ثبت نشده است.")
 
-                    Text(
-                        "ابتدا دانش‌آموز اضافه کنید.",
-                        color = Brown
-                    )
+            } else {
 
-                } else {
+                LazyColumn(
+                    modifier = Modifier.height(190.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
 
-                    students.forEach { student ->
+                    items(students, key = { it.id }) { student ->
 
                         OutlinedButton(
                             onClick = {
-                                selectedStudent = student
+                                selectedStudent = student.id
                             },
                             modifier = Modifier.fillMaxWidth()
                         ) {
+
                             Text(
-                                if (selectedStudent?.id == student.id)
-                                    "✓ ${student.firstName} ${student.lastName}"
+                                if (selectedStudent == student.id)
+                                    "✓ ${student.name} ${student.family}"
                                 else
-                                    "${student.firstName} ${student.lastName}"
+                                    "${student.name} ${student.family}"
                             )
                         }
                     }
                 }
-            }
 
-            item {
+                Spacer(modifier = Modifier.height(10.dp))
 
                 OutlinedTextField(
                     value = lesson,
-                    onValueChange = {
-                        lesson = it
-                    },
-                    label = {
-                        Text("درس")
-                    },
+                    onValueChange = { lesson = it },
+                    label = { Text("درس") },
                     modifier = Modifier.fillMaxWidth()
                 )
-            }
 
-            item {
+                Spacer(modifier = Modifier.height(8.dp))
 
                 Text(
                     "سطح عملکرد",
-                    color = Burgundy,
+                    color = Brown,
                     fontWeight = FontWeight.Bold
                 )
 
                 Row(
                     horizontalArrangement =
-                        Arrangement.spacedBy(6.dp)
+                        Arrangement.spacedBy(5.dp)
                 ) {
 
                     listOf(
+                        "عالی",
                         "خیلی خوب",
                         "خوب",
-                        "قابل قبول",
                         "نیازمند تلاش"
                     ).forEach { item ->
 
@@ -1465,47 +1354,61 @@ fun EvaluationScreen(
                             Text(
                                 if (level == item)
                                     "✓ $item"
-                                else
-                                    item
+                                else item,
+                                fontSize = 11.sp
                             )
                         }
                     }
                 }
-            }
-
-            item {
 
                 OutlinedTextField(
-                    value = description,
-                    onValueChange = {
-                        description = it
-                    },
-                    label = {
-                        Text("توضیحات معلم")
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    minLines = 4
+                    value = note,
+                    onValueChange = { note = it },
+                    label = { Text("توضیحات") },
+                    modifier = Modifier.fillMaxWidth()
                 )
-            }
 
-            item {
+                Spacer(modifier = Modifier.height(8.dp))
 
                 Button(
                     onClick = {
-                        lesson = ""
-                        level = ""
-                        description = ""
+
+                        if (
+                            selectedStudent != null &&
+                            lesson.isNotBlank()
+                        ) {
+
+                            evaluations =
+                                (
+                                    evaluations + Evaluation(
+                                        newId(),
+                                        selectedStudent!!,
+                                        lesson,
+                                        level,
+                                        note,
+                                        today()
+                                    )
+                                ).toMutableList()
+
+                            storage.saveEvaluations(evaluations)
+
+                            lesson = ""
+                            note = ""
+                        }
                     },
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Burgundy
+                    )
                 ) {
-                    Text("ثبت ارزیابی")
+                    Text("ثبت ارزشیابی")
                 }
             }
         }
     }
 }
 
-/* -------------------- SCHEDULE -------------------- */
+/* ---------------- برنامه هفتگی ---------------- */
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -1514,23 +1417,21 @@ fun ScheduleScreen(
 ) {
 
     val context = LocalContext.current
+    val storage = remember { AppStorage(context) }
 
     var list by remember {
-        mutableStateOf(
-            AppStorage.loadSchedules(context)
-        )
+        mutableStateOf(storage.loadSchedule())
     }
 
-    var showDialog by remember {
-        mutableStateOf(false)
-    }
+    var showAdd by remember { mutableStateOf(false) }
+    var day by remember { mutableStateOf("شنبه") }
+    var time by remember { mutableStateOf("") }
+    var lesson by remember { mutableStateOf("") }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = {
-                    Text("برنامه هفتگی")
-                },
+                title = { Text("برنامه هفتگی") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(
@@ -1539,23 +1440,10 @@ fun ScheduleScreen(
                         )
                     }
                 },
-                actions = {
-                    IconButton(
-                        onClick = {
-                            showDialog = true
-                        }
-                    ) {
-                        Icon(
-                            Icons.Default.Add,
-                            contentDescription = "افزودن"
-                        )
-                    }
-                },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = Burgundy,
                     titleContentColor = Color.White,
-                    navigationIconContentColor = Color.White,
-                    actionIconContentColor = Color.White
+                    navigationIconContentColor = Color.White
                 )
             )
         }
@@ -1569,67 +1457,71 @@ fun ScheduleScreen(
                 .padding(16.dp)
         ) {
 
-            if (list.isEmpty()) {
-
-                Text(
-                    "برای افزودن برنامه، روی + بزنید.",
-                    color = Brown
+            Button(
+                onClick = {
+                    showAdd = true
+                },
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Burgundy
                 )
+            ) {
+                Text("＋ افزودن برنامه")
+            }
 
-            } else {
+            Spacer(modifier = Modifier.height(10.dp))
 
-                LazyColumn(
-                    verticalArrangement =
-                        Arrangement.spacedBy(10.dp)
-                ) {
+            LazyColumn(
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
 
-                    items(list, key = { it.id }) { item ->
+                items(list, key = { it.id }) { item ->
 
-                        Card(
-                            modifier = Modifier.fillMaxWidth()
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = Color.White
+                        )
+                    ) {
+
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(14.dp)
                         ) {
 
-                            Row(
-                                modifier = Modifier.padding(14.dp),
-                                verticalAlignment =
-                                    Alignment.CenterVertically
+                            Column(
+                                modifier = Modifier.weight(1f)
                             ) {
 
-                                Column(
-                                    modifier = Modifier.weight(1f)
-                                ) {
+                                Text(
+                                    item.day,
+                                    color = Burgundy,
+                                    fontWeight = FontWeight.Bold
+                                )
 
-                                    Text(
-                                        item.lesson,
-                                        fontWeight = FontWeight.Bold,
-                                        color = Burgundy
-                                    )
+                                Text(
+                                    "${item.time} — ${item.lesson}",
+                                    color = Brown
+                                )
+                            }
 
-                                    Text(
-                                        "${item.day} - ${item.time}",
-                                        color = Brown
-                                    )
+                            TextButton(
+                                onClick = {
+
+                                    list =
+                                        list.filterNot {
+                                            it.id == item.id
+                                        }.toMutableList()
+
+                                    storage.saveSchedule(list)
                                 }
-
-                                IconButton(
-                                    onClick = {
-
-                                        list =
-                                            list.filter {
-                                                it.id != item.id
-                                            }
-
-                                        AppStorage.saveSchedules(
-                                            context,
-                                            list
-                                        )
-                                    }
-                                ) {
-                                    Icon(
-                                        Icons.Default.Delete,
-                                        contentDescription = "حذف"
-                                    )
-                                }
+                            ) {
+                                Text(
+                                    "حذف",
+                                    color = Red
+                                )
                             }
                         }
                     }
@@ -1638,99 +1530,83 @@ fun ScheduleScreen(
         }
     }
 
-    if (showDialog) {
+    if (showAdd) {
 
-        ScheduleDialog(
-            onDismiss = {
-                showDialog = false
+        AlertDialog(
+            onDismissRequest = {
+                showAdd = false
             },
-            onSave = { day, time, lesson ->
+            title = {
+                Text("برنامه جدید")
+            },
+            text = {
 
-                val item = ScheduleItem(
-                    System.currentTimeMillis(),
-                    day,
-                    time,
-                    lesson
-                )
+                Column {
 
-                list = list + item
+                    OutlinedTextField(
+                        value = day,
+                        onValueChange = { day = it },
+                        label = { Text("روز") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
 
-                AppStorage.saveSchedules(
-                    context,
-                    list
-                )
+                    OutlinedTextField(
+                        value = time,
+                        onValueChange = { time = it },
+                        label = { Text("ساعت") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
 
-                showDialog = false
+                    OutlinedTextField(
+                        value = lesson,
+                        onValueChange = { lesson = it },
+                        label = { Text("درس") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+
+                TextButton(
+                    onClick = {
+
+                        if (lesson.isNotBlank()) {
+
+                            list =
+                                (
+                                    list + ScheduleItem(
+                                        newId(),
+                                        day,
+                                        time,
+                                        lesson
+                                    )
+                                ).toMutableList()
+
+                            storage.saveSchedule(list)
+
+                            showAdd = false
+                            lesson = ""
+                            time = ""
+                        }
+                    }
+                ) {
+                    Text("ذخیره")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        showAdd = false
+                    }
+                ) {
+                    Text("انصراف")
+                }
             }
         )
     }
 }
 
-@Composable
-fun ScheduleDialog(
-    onDismiss: () -> Unit,
-    onSave: (String, String, String) -> Unit
-) {
-
-    var day by remember { mutableStateOf("") }
-    var time by remember { mutableStateOf("") }
-    var lesson by remember { mutableStateOf("") }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = {
-            Text("برنامه جدید")
-        },
-        text = {
-
-            Column {
-
-                OutlinedTextField(
-                    value = day,
-                    onValueChange = { day = it },
-                    label = { Text("روز") },
-                    singleLine = true
-                )
-
-                OutlinedTextField(
-                    value = time,
-                    onValueChange = { time = it },
-                    label = { Text("ساعت") },
-                    singleLine = true
-                )
-
-                OutlinedTextField(
-                    value = lesson,
-                    onValueChange = { lesson = it },
-                    label = { Text("درس") },
-                    singleLine = true
-                )
-            }
-        },
-        confirmButton = {
-            TextButton(
-                onClick = {
-                    if (
-                        day.isNotBlank() &&
-                        time.isNotBlank() &&
-                        lesson.isNotBlank()
-                    ) {
-                        onSave(day, time, lesson)
-                    }
-                }
-            ) {
-                Text("ذخیره")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("انصراف")
-            }
-        }
-    )
-}
-
-/* -------------------- HOMEWORK -------------------- */
+/* ---------------- تکالیف ---------------- */
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -1739,23 +1615,22 @@ fun HomeworkScreen(
 ) {
 
     val context = LocalContext.current
+    val storage = remember { AppStorage(context) }
 
     var list by remember {
-        mutableStateOf(
-            AppStorage.loadHomework(context)
-        )
+        mutableStateOf(storage.loadHomework())
     }
 
-    var showDialog by remember {
-        mutableStateOf(false)
-    }
+    var showAdd by remember { mutableStateOf(false) }
+
+    var title by remember { mutableStateOf("") }
+    var description by remember { mutableStateOf("") }
+    var date by remember { mutableStateOf(today()) }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = {
-                    Text("تکالیف و یادداشت‌ها")
-                },
+                title = { Text("تکالیف و یادداشت‌ها") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(
@@ -1764,64 +1639,72 @@ fun HomeworkScreen(
                         )
                     }
                 },
-                actions = {
-                    IconButton(
-                        onClick = {
-                            showDialog = true
-                        }
-                    ) {
-                        Icon(
-                            Icons.Default.Add,
-                            contentDescription = "افزودن"
-                        )
-                    }
-                },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = Burgundy,
                     titleContentColor = Color.White,
-                    navigationIconContentColor = Color.White,
-                    actionIconContentColor = Color.White
+                    navigationIconContentColor = Color.White
                 )
             )
         }
     ) { padding ->
 
-        if (list.isEmpty()) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Cream)
+                .padding(padding)
+                .padding(16.dp)
+        ) {
 
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(Cream)
-                    .padding(padding),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    "هنوز تکلیفی ثبت نشده است.",
-                    color = Brown
+            Button(
+                onClick = {
+                    showAdd = true
+                },
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Burgundy
                 )
+            ) {
+                Text("＋ تکلیف جدید")
             }
 
-        } else {
+            Spacer(modifier = Modifier.height(10.dp))
 
             LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(Cream)
-                    .padding(padding)
-                    .padding(16.dp),
-                verticalArrangement =
-                    Arrangement.spacedBy(10.dp)
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
 
                 items(list, key = { it.id }) { homework ->
 
                     Card(
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = Color.White
+                        )
                     ) {
 
                         Row(
-                            modifier = Modifier.padding(14.dp)
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
+
+                            Checkbox(
+                                checked = homework.done,
+                                onCheckedChange = {
+
+                                    list =
+                                        list.map {
+                                            if (it.id == homework.id)
+                                                it.copy(done = !it.done)
+                                            else it
+                                        }.toMutableList()
+
+                                    storage.saveHomework(list)
+                                }
+                            )
 
                             Column(
                                 modifier = Modifier.weight(1f)
@@ -1829,39 +1712,36 @@ fun HomeworkScreen(
 
                                 Text(
                                     homework.title,
-                                    color = Burgundy,
+                                    color = Brown,
                                     fontWeight = FontWeight.Bold
                                 )
 
                                 Text(
                                     homework.description,
-                                    color = Brown
+                                    color = Color.Gray
                                 )
 
                                 Text(
-                                    "تاریخ: ${homework.date}",
-                                    color = Color.Gray,
+                                    homework.date,
+                                    color = Gold,
                                     fontSize = 12.sp
                                 )
                             }
 
-                            IconButton(
+                            TextButton(
                                 onClick = {
 
                                     list =
-                                        list.filter {
-                                            it.id != homework.id
-                                        }
+                                        list.filterNot {
+                                            it.id == homework.id
+                                        }.toMutableList()
 
-                                    AppStorage.saveHomework(
-                                        context,
-                                        list
-                                    )
+                                    storage.saveHomework(list)
                                 }
                             ) {
-                                Icon(
-                                    Icons.Default.Delete,
-                                    contentDescription = "حذف"
+                                Text(
+                                    "حذف",
+                                    color = Red
                                 )
                             }
                         }
@@ -1871,98 +1751,85 @@ fun HomeworkScreen(
         }
     }
 
-    if (showDialog) {
+    if (showAdd) {
 
-        HomeworkDialog(
-            onDismiss = {
-                showDialog = false
+        AlertDialog(
+            onDismissRequest = {
+                showAdd = false
             },
-            onSave = { title, description, date ->
+            title = {
+                Text("تکلیف جدید")
+            },
+            text = {
 
-                val homework = Homework(
-                    System.currentTimeMillis(),
-                    title,
-                    description,
-                    date
-                )
+                Column {
 
-                list = list + homework
+                    OutlinedTextField(
+                        value = title,
+                        onValueChange = { title = it },
+                        label = { Text("عنوان") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
 
-                AppStorage.saveHomework(
-                    context,
-                    list
-                )
+                    OutlinedTextField(
+                        value = description,
+                        onValueChange = { description = it },
+                        label = { Text("توضیحات") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
 
-                showDialog = false
+                    OutlinedTextField(
+                        value = date,
+                        onValueChange = { date = it },
+                        label = { Text("تاریخ") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+
+                TextButton(
+                    onClick = {
+
+                        if (title.isNotBlank()) {
+
+                            list =
+                                (
+                                    list + Homework(
+                                        newId(),
+                                        title,
+                                        description,
+                                        date,
+                                        false
+                                    )
+                                ).toMutableList()
+
+                            storage.saveHomework(list)
+
+                            title = ""
+                            description = ""
+                            showAdd = false
+                        }
+                    }
+                ) {
+                    Text("ذخیره")
+                }
+            },
+            dismissButton = {
+
+                TextButton(
+                    onClick = {
+                        showAdd = false
+                    }
+                ) {
+                    Text("انصراف")
+                }
             }
         )
     }
 }
 
-@Composable
-fun HomeworkDialog(
-    onDismiss: () -> Unit,
-    onSave: (String, String, String) -> Unit
-) {
-
-    var title by remember { mutableStateOf("") }
-    var description by remember { mutableStateOf("") }
-    var date by remember { mutableStateOf("") }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = {
-            Text("تکلیف جدید")
-        },
-        text = {
-
-            Column {
-
-                OutlinedTextField(
-                    value = title,
-                    onValueChange = { title = it },
-                    label = { Text("عنوان تکلیف") }
-                )
-
-                OutlinedTextField(
-                    value = description,
-                    onValueChange = {
-                        description = it
-                    },
-                    label = { Text("توضیحات") }
-                )
-
-                OutlinedTextField(
-                    value = date,
-                    onValueChange = { date = it },
-                    label = { Text("تاریخ تحویل") }
-                )
-            }
-        },
-        confirmButton = {
-            TextButton(
-                onClick = {
-                    if (title.isNotBlank()) {
-                        onSave(
-                            title,
-                            description,
-                            date
-                        )
-                    }
-                }
-            ) {
-                Text("ذخیره")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("انصراف")
-            }
-        }
-    )
-}
-
-/* -------------------- EXAM -------------------- */
+/* ---------------- آزمون ساز ---------------- */
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -1971,23 +1838,44 @@ fun ExamScreen(
 ) {
 
     val context = LocalContext.current
+    val storage = remember { AppStorage(context) }
 
-    var list by remember {
-        mutableStateOf(
-            AppStorage.loadExams(context)
-        )
+    var exams by remember {
+        mutableStateOf(storage.loadExams())
     }
 
-    var showDialog by remember {
-        mutableStateOf(false)
+    var questions by remember {
+        mutableStateOf(storage.loadQuestions())
+    }
+
+    var selectedExam by remember { mutableStateOf<Exam?>(null) }
+
+    var showAddExam by remember { mutableStateOf(false) }
+
+    var title by remember { mutableStateOf("") }
+    var subject by remember { mutableStateOf("") }
+
+    if (selectedExam != null) {
+
+        ExamQuestionsScreen(
+            exam = selectedExam!!,
+            questions = questions,
+            onQuestionsChanged = {
+                questions = it
+                storage.saveQuestions(it)
+            },
+            onBack = {
+                selectedExam = null
+            }
+        )
+
+        return
     }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = {
-                    Text("آزمون‌ساز")
-                },
+                title = { Text("آزمون‌ساز") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(
@@ -1996,67 +1884,62 @@ fun ExamScreen(
                         )
                     }
                 },
-                actions = {
-                    IconButton(
-                        onClick = {
-                            showDialog = true
-                        }
-                    ) {
-                        Icon(
-                            Icons.Default.Add,
-                            contentDescription = "آزمون جدید"
-                        )
-                    }
-                },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = Burgundy,
                     titleContentColor = Color.White,
-                    navigationIconContentColor = Color.White,
-                    actionIconContentColor = Color.White
+                    navigationIconContentColor = Color.White
                 )
             )
         }
     ) { padding ->
 
-        if (list.isEmpty()) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Cream)
+                .padding(padding)
+                .padding(16.dp)
+        ) {
 
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(Cream)
-                    .padding(padding),
-                contentAlignment = Alignment.Center
-            ) {
-
-                Text(
-                    "هنوز آزمونی ساخته نشده است.\nروی + بزنید.",
-                    textAlign = TextAlign.Center,
-                    color = Brown
+            Button(
+                onClick = {
+                    title = ""
+                    subject = ""
+                    showAddExam = true
+                },
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Burgundy
                 )
+            ) {
+                Text("＋ ساخت آزمون")
             }
 
-        } else {
+            Spacer(modifier = Modifier.height(10.dp))
 
             LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(Cream)
-                    .padding(padding)
-                    .padding(16.dp),
-                verticalArrangement =
-                    Arrangement.spacedBy(10.dp)
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
 
-                items(list, key = { it.id }) { exam ->
+                items(exams, key = { it.id }) { exam ->
 
                     Card(
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                selectedExam = exam
+                            },
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = Color.White
+                        )
                     ) {
 
                         Row(
-                            modifier = Modifier.padding(14.dp),
-                            verticalAlignment =
-                                Alignment.CenterVertically
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(14.dp),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
 
                             Column(
@@ -2066,6 +1949,7 @@ fun ExamScreen(
                                 Text(
                                     exam.title,
                                     color = Burgundy,
+                                    fontSize = 18.sp,
                                     fontWeight = FontWeight.Bold
                                 )
 
@@ -2075,28 +1959,32 @@ fun ExamScreen(
                                 )
 
                                 Text(
-                                    "تعداد سؤال: ${exam.questions}",
-                                    color = Color.Gray
+                                    "برای افزودن سؤال، روی آزمون بزنید.",
+                                    color = Color.Gray,
+                                    fontSize = 12.sp
                                 )
                             }
 
-                            IconButton(
+                            TextButton(
                                 onClick = {
 
-                                    list =
-                                        list.filter {
-                                            it.id != exam.id
-                                        }
+                                    exams =
+                                        exams.filterNot {
+                                            it.id == exam.id
+                                        }.toMutableList()
 
-                                    AppStorage.saveExams(
-                                        context,
-                                        list
-                                    )
+                                    questions =
+                                        questions.filterNot {
+                                            it.examId == exam.id
+                                        }.toMutableList()
+
+                                    storage.saveExams(exams)
+                                    storage.saveQuestions(questions)
                                 }
                             ) {
-                                Icon(
-                                    Icons.Default.Delete,
-                                    contentDescription = "حذف"
+                                Text(
+                                    "حذف",
+                                    color = Red
                                 )
                             }
                         }
@@ -2106,112 +1994,269 @@ fun ExamScreen(
         }
     }
 
-    if (showDialog) {
+    if (showAddExam) {
 
-        ExamDialog(
-            onDismiss = {
-                showDialog = false
+        AlertDialog(
+            onDismissRequest = {
+                showAddExam = false
             },
-            onSave = { title, subject, questions ->
+            title = {
+                Text("ساخت آزمون")
+            },
+            text = {
 
-                val exam = Exam(
-                    System.currentTimeMillis(),
-                    title,
-                    subject,
-                    questions
-                )
+                Column {
 
-                list = list + exam
+                    OutlinedTextField(
+                        value = title,
+                        onValueChange = { title = it },
+                        label = { Text("عنوان آزمون") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
 
-                AppStorage.saveExams(
-                    context,
-                    list
-                )
+                    OutlinedTextField(
+                        value = subject,
+                        onValueChange = { subject = it },
+                        label = { Text("درس") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
 
-                showDialog = false
+                TextButton(
+                    onClick = {
+
+                        if (title.isNotBlank()) {
+
+                            exams =
+                                (
+                                    exams + Exam(
+                                        newId(),
+                                        title,
+                                        subject
+                                    )
+                                ).toMutableList()
+
+                            storage.saveExams(exams)
+                            showAddExam = false
+                        }
+                    }
+                ) {
+                    Text("ساخت")
+                }
+            },
+            dismissButton = {
+
+                TextButton(
+                    onClick = {
+                        showAddExam = false
+                    }
+                ) {
+                    Text("انصراف")
+                }
             }
         )
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ExamDialog(
-    onDismiss: () -> Unit,
-    onSave: (String, String, Int) -> Unit
+fun ExamQuestionsScreen(
+    exam: Exam,
+    questions: List<ExamQuestion>,
+    onQuestionsChanged: (MutableList<ExamQuestion>) -> Unit,
+    onBack: () -> Unit
 ) {
 
-    var title by remember { mutableStateOf("") }
-    var subject by remember { mutableStateOf("") }
-    var questions by remember { mutableStateOf("10") }
+    var showAdd by remember { mutableStateOf(false) }
+    var question by remember { mutableStateOf("") }
+    var answer by remember { mutableStateOf("") }
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = {
-            Text("ساخت آزمون")
-        },
-        text = {
+    val list =
+        questions.filter { it.examId == exam.id }
 
-            Column {
-
-                OutlinedTextField(
-                    value = title,
-                    onValueChange = {
-                        title = it
-                    },
-                    label = {
-                        Text("عنوان آزمون")
-                    }
-                )
-
-                OutlinedTextField(
-                    value = subject,
-                    onValueChange = {
-                        subject = it
-                    },
-                    label = {
-                        Text("درس")
-                    }
-                )
-
-                OutlinedTextField(
-                    value = questions,
-                    onValueChange = {
-                        questions = it
-                    },
-                    label = {
-                        Text("تعداد سؤال")
-                    }
-                )
-            }
-        },
-        confirmButton = {
-            TextButton(
-                onClick = {
-
-                    val count =
-                        questions.toIntOrNull() ?: 10
-
-                    if (title.isNotBlank()) {
-                        onSave(
-                            title,
-                            subject,
-                            count
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text(exam.title) },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(
+                            Icons.Default.ArrowBack,
+                            contentDescription = "بازگشت"
                         )
                     }
-                }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = Burgundy,
+                    titleContentColor = Color.White,
+                    navigationIconContentColor = Color.White
+                )
+            )
+        }
+    ) { padding ->
+
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Cream)
+                .padding(padding)
+                .padding(16.dp)
+        ) {
+
+            Text(
+                "تعداد سؤال‌ها: ${list.size}",
+                color = Burgundy,
+                fontWeight = FontWeight.Bold
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Button(
+                onClick = {
+                    question = ""
+                    answer = ""
+                    showAdd = true
+                },
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Burgundy
+                )
             ) {
-                Text("ساخت آزمون")
+                Text("＋ افزودن سؤال")
             }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("انصراف")
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            LazyColumn(
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+
+                items(list, key = { it.id }) { q ->
+
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(15.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = Color.White
+                        )
+                    ) {
+
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(12.dp)
+                        ) {
+
+                            Column(
+                                modifier = Modifier.weight(1f)
+                            ) {
+
+                                Text(
+                                    q.question,
+                                    color = Brown,
+                                    fontWeight = FontWeight.Bold
+                                )
+
+                                if (q.answer.isNotBlank()) {
+                                    Text(
+                                        "پاسخ: ${q.answer}",
+                                        color = Green
+                                    )
+                                }
+                            }
+
+                            TextButton(
+                                onClick = {
+
+                                    onQuestionsChanged(
+                                        questions.filterNot {
+                                            it.id == q.id
+                                        }.toMutableList()
+                                    )
+                                }
+                            ) {
+                                Text(
+                                    "حذف",
+                                    color = Red
+                                )
+                            }
+                        }
+                    }
+                }
             }
         }
-    )
+    }
+
+    if (showAdd) {
+
+        AlertDialog(
+            onDismissRequest = {
+                showAdd = false
+            },
+            title = {
+                Text("سؤال جدید")
+            },
+            text = {
+
+                Column {
+
+                    OutlinedTextField(
+                        value = question,
+                        onValueChange = { question = it },
+                        label = { Text("متن سؤال") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    OutlinedTextField(
+                        value = answer,
+                        onValueChange = { answer = it },
+                        label = { Text("پاسخ صحیح") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+
+                TextButton(
+                    onClick = {
+
+                        if (question.isNotBlank()) {
+
+                            onQuestionsChanged(
+                                (
+                                    questions + ExamQuestion(
+                                        newId(),
+                                        exam.id,
+                                        question,
+                                        answer
+                                    )
+                                ).toMutableList()
+                            )
+
+                            showAdd = false
+                        }
+                    }
+                ) {
+                    Text("ذخیره")
+                }
+            },
+            dismissButton = {
+
+                TextButton(
+                    onClick = {
+                        showAdd = false
+                    }
+                ) {
+                    Text("انصراف")
+                }
+            }
+        )
+    }
 }
 
-/* -------------------- REPORTS -------------------- */
+/* ---------------- گزارش‌ها ---------------- */
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -2220,52 +2265,40 @@ fun ReportsScreen(
 ) {
 
     val context = LocalContext.current
+    val storage = remember { AppStorage(context) }
 
-    val students =
-        remember {
-            AppStorage.loadStudents(context)
-        }
-
-    val homeworks =
-        remember {
-            AppStorage.loadHomework(context)
-        }
-
-    val schedules =
-        remember {
-            AppStorage.loadSchedules(context)
-        }
-
-    val exams =
-        remember {
-            AppStorage.loadExams(context)
-        }
-
-    var present = 0
-    var absent = 0
-    var late = 0
-
-    students.forEach {
-
-        when (
-            AppStorage.getAttendance(
-                context,
-                it.id
-            )
-        ) {
-
-            "حاضر" -> present++
-            "غایب" -> absent++
-            "تأخیر" -> late++
-        }
+    val students = remember {
+        storage.loadStudents()
     }
+
+    val attendance = remember {
+        storage.loadAttendance()
+    }
+
+    val evaluations = remember {
+        storage.loadEvaluations()
+    }
+
+    val homework = remember {
+        storage.loadHomework()
+    }
+
+    val todayRecords =
+        attendance.filter { it.date == today() }
+
+    val present =
+        todayRecords.count { it.status == "حاضر" }
+
+    val absent =
+        todayRecords.count { it.status == "غایب" }
+
+    val late =
+        todayRecords.count { it.status == "تأخیر" }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = {
-                    Text("گزارش‌ها")
-                },
+                title = { Text("گزارش‌ها") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(
@@ -2289,15 +2322,13 @@ fun ReportsScreen(
                 .background(Cream)
                 .padding(padding)
                 .padding(16.dp),
-            verticalArrangement =
-                Arrangement.spacedBy(12.dp)
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
 
             item {
 
                 ReportCard(
-                    "👩‍🎓",
-                    "دانش‌آموزان",
+                    "تعداد دانش‌آموزان",
                     students.size.toString()
                 )
             }
@@ -2305,7 +2336,6 @@ fun ReportsScreen(
             item {
 
                 ReportCard(
-                    "✅",
                     "حاضر امروز",
                     present.toString()
                 )
@@ -2314,7 +2344,6 @@ fun ReportsScreen(
             item {
 
                 ReportCard(
-                    "❌",
                     "غایب امروز",
                     absent.toString()
                 )
@@ -2323,7 +2352,6 @@ fun ReportsScreen(
             item {
 
                 ReportCard(
-                    "⏰",
                     "تأخیر امروز",
                     late.toString()
                 )
@@ -2332,28 +2360,80 @@ fun ReportsScreen(
             item {
 
                 ReportCard(
-                    "📚",
-                    "تکالیف ثبت‌شده",
-                    homeworks.size.toString()
+                    "تعداد ارزشیابی‌ها",
+                    evaluations.size.toString()
                 )
             }
 
             item {
 
                 ReportCard(
-                    "📅",
-                    "برنامه‌های هفتگی",
-                    schedules.size.toString()
+                    "کل تکالیف",
+                    homework.size.toString()
                 )
             }
 
             item {
 
                 ReportCard(
-                    "📝",
-                    "آزمون‌ها",
-                    exams.size.toString()
+                    "تکالیف انجام‌شده",
+                    homework.count { it.done }.toString()
                 )
+            }
+
+            item {
+
+                Text(
+                    "وضعیت دانش‌آموزان",
+                    color = Burgundy,
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+
+            items(students, key = { it.id }) { student ->
+
+                val studentRecords =
+                    todayRecords.filter {
+                        it.studentId == student.id
+                    }
+
+                val status =
+                    studentRecords.firstOrNull()?.status
+                        ?: "ثبت نشده"
+
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(
+                        containerColor = Color.White
+                    )
+                ) {
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(14.dp),
+                        horizontalArrangement =
+                            Arrangement.SpaceBetween
+                    ) {
+
+                        Text(
+                            "${student.name} ${student.family}",
+                            color = Brown,
+                            fontWeight = FontWeight.Bold
+                        )
+
+                        Text(
+                            status,
+                            color = when (status) {
+                                "حاضر" -> Green
+                                "غایب" -> Red
+                                "تأخیر" -> Gold
+                                else -> Color.Gray
+                            }
+                        )
+                    }
+                }
             }
         }
     }
@@ -2361,49 +2441,45 @@ fun ReportsScreen(
 
 @Composable
 fun ReportCard(
-    emoji: String,
     title: String,
     value: String
 ) {
 
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(20.dp)
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = Color.White
+        )
     ) {
 
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(18.dp),
+            horizontalArrangement =
+                Arrangement.SpaceBetween,
             verticalAlignment =
                 Alignment.CenterVertically
         ) {
 
             Text(
-                emoji,
-                fontSize = 32.sp
-            )
-
-            Spacer(modifier = Modifier.width(15.dp))
-
-            Text(
                 title,
-                modifier = Modifier.weight(1f),
                 color = Brown,
-                fontSize = 17.sp
+                fontSize = 16.sp
             )
 
             Text(
                 value,
                 color = Burgundy,
-                fontSize = 24.sp,
+                fontSize = 25.sp,
                 fontWeight = FontWeight.Bold
             )
         }
     }
 }
 
-/* -------------------- HANDWRITING -------------------- */
+/* ---------------- خط تحریری ---------------- */
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -2411,12 +2487,14 @@ fun HandwritingScreen(
     onBack: () -> Unit
 ) {
 
+    var practice by remember {
+        mutableStateOf("")
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
-                title = {
-                    Text("خط تحریری")
-                },
+                title = { Text("خط تحریری") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(
@@ -2440,21 +2518,23 @@ fun HandwritingScreen(
                 .background(Cream)
                 .padding(padding)
                 .padding(20.dp),
-            horizontalAlignment =
-                Alignment.CenterHorizontally
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
 
             Text(
                 "تمرین خط تحریری",
                 color = Burgundy,
-                fontSize = 28.sp,
+                fontSize = 26.sp,
                 fontWeight = FontWeight.Bold
             )
 
-            Spacer(modifier = Modifier.height(20.dp))
+            Spacer(modifier = Modifier.height(15.dp))
 
             Card(
                 modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = Color.White
+                ),
                 shape = RoundedCornerShape(20.dp)
             ) {
 
@@ -2463,38 +2543,48 @@ fun HandwritingScreen(
                 ) {
 
                     Text(
-                        "تمرین پیشنهادی:",
-                        fontWeight = FontWeight.Bold,
-                        color = Burgundy
+                        "متن پیشنهادی:",
+                        color = Gold,
+                        fontWeight = FontWeight.Bold
                     )
 
-                    Spacer(
-                        modifier = Modifier.height(12.dp)
-                    )
+                    Spacer(modifier = Modifier.height(10.dp))
 
                     Text(
-                        "بهار آمد و باغ از عطر گل‌ها پر شد.",
-                        fontSize = 22.sp,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-
-                    Spacer(
-                        modifier = Modifier.height(20.dp)
-                    )
-
-                    Text(
-                        "برای تمرین، جمله بالا را چند بار با خط خوانا بنویسید.",
+                        "به نام خدا\n\nدانش، چراغ راه زندگی است.\n\nمن با تلاش و پشتکار می‌آموزم.",
                         color = Brown,
-                        textAlign = TextAlign.Center
+                        fontSize = 21.sp,
+                        lineHeight = 38.sp
                     )
                 }
             }
+
+            Spacer(modifier = Modifier.height(18.dp))
+
+            OutlinedTextField(
+                value = practice,
+                onValueChange = {
+                    practice = it
+                },
+                label = {
+                    Text("اینجا تمرین خود را بنویسید")
+                },
+                minLines = 6,
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            Text(
+                "تمرین روزانه حتی چند دقیقه‌ای، به بهتر شدن دست‌خط کمک می‌کند. ✍️",
+                color = Color.Gray,
+                textAlign = TextAlign.Center
+            )
         }
     }
 }
 
-/* -------------------- BACKUP -------------------- */
+/* ---------------- پشتیبان‌گیری ---------------- */
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -2503,17 +2593,20 @@ fun BackupScreen(
 ) {
 
     val context = LocalContext.current
+    val storage = remember { AppStorage(context) }
 
-    var backup by remember {
+    var backupText by remember {
+        mutableStateOf("")
+    }
+
+    var message by remember {
         mutableStateOf("")
     }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = {
-                    Text("پشتیبان‌گیری")
-                },
+                title = { Text("پشتیبان‌گیری") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(
@@ -2536,89 +2629,184 @@ fun BackupScreen(
                 .fillMaxSize()
                 .background(Cream)
                 .padding(padding)
-                .padding(20.dp)
+                .padding(18.dp)
+        ) {
+
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = Color.White
+                ),
+                shape = RoundedCornerShape(20.dp)
+            ) {
+
+                Column(
+                    modifier = Modifier.padding(18.dp)
+                ) {
+
+                    Text(
+                        "ذخیره پشتیبان",
+                        color = Burgundy,
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Text(
+                        "اطلاعات دانش‌آموزان، حضور و غیاب، ارزشیابی، برنامه، تکالیف و آزمون‌ها در پشتیبان قرار می‌گیرد.",
+                        color = Brown
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Button(
+                        onClick = {
+
+                            val backup =
+                                storage.exportBackup()
+
+                            val intent =
+                                Intent(Intent.ACTION_SEND).apply {
+                                    type = "text/plain"
+                                    putExtra(
+                                        Intent.EXTRA_TEXT,
+                                        backup
+                                    )
+                                }
+
+                            context.startActivity(
+                                Intent.createChooser(
+                                    intent,
+                                    "ارسال نسخه پشتیبان"
+                                )
+                            )
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Burgundy
+                        )
+                    ) {
+                        Text("💾 ایجاد و ارسال پشتیبان")
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(18.dp))
+
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = Color.White
+                ),
+                shape = RoundedCornerShape(20.dp)
+            ) {
+
+                Column(
+                    modifier = Modifier.padding(18.dp)
+                ) {
+
+                    Text(
+                        "بازیابی اطلاعات",
+                        color = Burgundy,
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Text(
+                        "متن پشتیبان JSON را در کادر زیر قرار دهید و بازیابی را بزنید.",
+                        color = Brown
+                    )
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    OutlinedTextField(
+                        value = backupText,
+                        onValueChange = {
+                            backupText = it
+                        },
+                        label = {
+                            Text("متن پشتیبان")
+                        },
+                        minLines = 5,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    Button(
+                        onClick = {
+
+                            val success =
+                                storage.restoreBackup(
+                                    backupText
+                                )
+
+                            message =
+                                if (success)
+                                    "بازیابی با موفقیت انجام شد."
+                                else
+                                    "متن پشتیبان معتبر نیست."
+
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Burgundy
+                        )
+                    ) {
+                        Text("بازیابی اطلاعات")
+                    }
+
+                    if (message.isNotBlank()) {
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Text(
+                            message,
+                            color =
+                                if (
+                                    message.contains("موفقیت")
+                                )
+                                    Green
+                                else Red,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/* ---------------- ابزارهای عمومی ---------------- */
+
+@Composable
+fun EmptyMessage(
+    text: String
+) {
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = Color.White
+        ),
+        shape = RoundedCornerShape(18.dp)
+    ) {
+
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(25.dp),
+            contentAlignment = Alignment.Center
         ) {
 
             Text(
-                "پشتیبان‌گیری اطلاعات",
-                color = Burgundy,
-                fontSize = 25.sp,
-                fontWeight = FontWeight.Bold
+                text,
+                color = Brown,
+                textAlign = TextAlign.Center
             )
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            Text(
-                "از اطلاعات دانش‌آموزان، تکالیف، برنامه هفتگی و آزمون‌ها یک نسخه متنی تهیه می‌شود.",
-                color = Brown
-            )
-
-            Spacer(modifier = Modifier.height(20.dp))
-
-            Button(
-                onClick = {
-                    backup =
-                        AppStorage.backupText(context)
-                },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-
-                Icon(
-                    Icons.Default.Backup,
-                    contentDescription = null
-                )
-
-                Spacer(modifier = Modifier.width(8.dp))
-
-                Text("تهیه نسخه پشتیبان")
-            }
-
-            Spacer(modifier = Modifier.height(10.dp))
-
-            if (backup.isNotEmpty()) {
-
-                Button(
-                    onClick = {
-
-                        val intent =
-                            Intent(Intent.ACTION_SEND).apply {
-                                type = "text/plain"
-                                putExtra(
-                                    Intent.EXTRA_TEXT,
-                                    backup
-                                )
-                            }
-
-                        context.startActivity(
-                            Intent.createChooser(
-                                intent,
-                                "ارسال نسخه پشتیبان"
-                            )
-                        )
-                    },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-
-                    Icon(
-                        Icons.Default.Send,
-                        contentDescription = null
-                    )
-
-                    Spacer(
-                        modifier = Modifier.width(8.dp)
-                    )
-
-                    Text("ارسال / اشتراک‌گذاری Backup")
-                }
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                Text(
-                    "نسخه پشتیبان آماده است.",
-                    color = Green,
-                    fontWeight = FontWeight.Bold
-                )
-            }
         }
     }
 }
