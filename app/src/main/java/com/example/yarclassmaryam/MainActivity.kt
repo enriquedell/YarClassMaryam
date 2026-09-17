@@ -4,7 +4,6 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -13,15 +12,23 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.BarChart
+import androidx.compose.material.icons.filled.Backup
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Create
+import androidx.compose.material.icons.filled.DateRange
+import androidx.compose.material.icons.filled.EditNote
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.NoteAlt
+import androidx.compose.material.icons.filled.People
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -35,7 +42,6 @@ private val Brown = Color(0xFF3B251A)
 class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
-
         installSplashScreen()
 
         super.onCreate(savedInstanceState)
@@ -125,25 +131,30 @@ fun LoginScreen(
             Text(
                 text = "به یارِ کلاس مریم خوش آمدید",
                 color = Brown,
-                fontSize = 17.sp
+                fontSize = 17.sp,
+                textAlign = TextAlign.Center
             )
 
             Spacer(
                 modifier = Modifier.height(28.dp)
             )
 
-            Image(
-                painter = painterResource(
-                    id = R.drawable.maryam_photo
-                ),
-                contentDescription = "مریم شجاعی",
+            // به جای maryam_photo از یک تصویر ساده متنی استفاده می‌کنیم
+            Box(
                 modifier = Modifier
                     .size(150.dp)
-                    .clip(
-                        RoundedCornerShape(30.dp)
-                    ),
-                contentScale = ContentScale.Crop
-            )
+                    .clip(RoundedCornerShape(30.dp))
+                    .background(Burgundy),
+                contentAlignment = Alignment.Center
+            ) {
+
+                Text(
+                    text = "مریم",
+                    color = Color.White,
+                    fontSize = 32.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
 
             Spacer(
                 modifier = Modifier.height(24.dp)
@@ -207,7 +218,7 @@ fun HomeScreen() {
         mutableStateOf<String?>(null)
     }
 
-    val items = listOf(
+    val menuItems = listOf(
 
         MenuItem(
             "دانش‌آموزان",
@@ -316,22 +327,21 @@ fun HomeScreen() {
                     verticalAlignment = Alignment.CenterVertically
                 ) {
 
-                    Image(
-
-                        painter = painterResource(
-                            id = R.drawable.maryam_photo
-                        ),
-
-                        contentDescription = null,
-
+                    Box(
                         modifier = Modifier
                             .size(100.dp)
-                            .clip(
-                                RoundedCornerShape(20.dp)
-                            ),
+                            .clip(RoundedCornerShape(20.dp))
+                            .background(Burgundy),
+                        contentAlignment = Alignment.Center
+                    ) {
 
-                        contentScale = ContentScale.Crop
-                    )
+                        Text(
+                            text = "مریم",
+                            color = Color.White,
+                            fontSize = 24.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
 
                     Spacer(
                         modifier = Modifier.width(16.dp)
@@ -386,7 +396,7 @@ fun HomeScreen() {
 
             ) {
 
-                items(items) { item ->
+                items(menuItems) { item ->
 
                     Card(
 
@@ -503,7 +513,8 @@ fun DetailScreen(
                 title,
                 fontSize = 28.sp,
                 color = Burgundy,
-                fontWeight = FontWeight.Bold
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center
             )
 
             Spacer(
