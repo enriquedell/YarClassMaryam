@@ -22,15 +22,11 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.Backup
-import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Create
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.Note
-import androidx.compose.material.icons.filled.People
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -132,24 +128,27 @@ fun LoginScreen(
     ) {
 
         Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            modifier = Modifier.padding(24.dp)
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
 
             Text(
                 text = "🌙",
-                fontSize = 58.sp
+                fontSize = 60.sp
             )
 
             Spacer(
-                modifier = Modifier.height(8.dp)
+                modifier = Modifier.height(10.dp)
             )
 
             Text(
                 text = "ماه زیبا، سلام",
                 color = Burgundy,
                 fontSize = 30.sp,
-                fontWeight = FontWeight.Bold
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center
             )
 
             Spacer(
@@ -167,8 +166,10 @@ fun LoginScreen(
                 modifier = Modifier.height(28.dp)
             )
 
+            // به جای عکس خارجی، از آیکون استفاده شده
+            // تا خطای maryam_photo نداشته باشیم.
             Card(
-                modifier = Modifier.size(130.dp),
+                modifier = Modifier.size(150.dp),
                 shape = RoundedCornerShape(30.dp),
                 colors = CardDefaults.cardColors(
                     containerColor = Burgundy
@@ -183,7 +184,7 @@ fun LoginScreen(
                     Text(
                         text = "م",
                         color = Color.White,
-                        fontSize = 64.sp,
+                        fontSize = 72.sp,
                         fontWeight = FontWeight.Bold
                     )
                 }
@@ -203,9 +204,10 @@ fun LoginScreen(
                 leadingIcon = {
                     Icon(
                         imageVector = Icons.Default.Lock,
-                        contentDescription = null
+                        contentDescription = "رمز"
                     )
-                }
+                },
+                modifier = Modifier.fillMaxWidth()
             )
 
             Spacer(
@@ -214,10 +216,10 @@ fun LoginScreen(
 
             Button(
                 onClick = onLogin,
+                modifier = Modifier.fillMaxWidth(),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = Burgundy
-                ),
-                modifier = Modifier.fillMaxWidth(0.72f)
+                )
             ) {
 
                 Text(
@@ -256,7 +258,7 @@ fun HomeScreen() {
 
         MenuItem(
             title = "دانش‌آموزان",
-            icon = Icons.Default.People
+            icon = Icons.Default.Person
         ),
 
         MenuItem(
@@ -281,22 +283,22 @@ fun HomeScreen() {
 
         MenuItem(
             title = "تکالیف و یادداشت‌ها",
-            icon = Icons.Default.Note
+            icon = Icons.Default.Edit
         ),
 
         MenuItem(
             title = "گزارش‌ها",
-            icon = Icons.Default.BarChart
+            icon = Icons.Default.CheckCircle
         ),
 
         MenuItem(
             title = "خط تحریری",
-            icon = Icons.Default.Create
+            icon = Icons.Default.Edit
         ),
 
         MenuItem(
             title = "پشتیبان‌گیری",
-            icon = Icons.Default.Backup
+            icon = Icons.Default.CheckCircle
         )
     )
 
@@ -320,3 +322,251 @@ fun HomeScreen() {
 
                 title = {
                     Text(
+                        text = "یارِ کلاس مریم",
+                        fontWeight = FontWeight.Bold
+                    )
+                },
+
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = Burgundy,
+                    titleContentColor = Color.White
+                )
+            )
+        }
+
+    ) { paddingValues ->
+
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Cream)
+                .padding(paddingValues)
+                .padding(16.dp)
+        ) {
+
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(24.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = Color.White
+                )
+            ) {
+
+                Row(
+                    modifier = Modifier.padding(18.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+
+                    Card(
+                        modifier = Modifier.size(90.dp),
+                        shape = RoundedCornerShape(20.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = Burgundy
+                        )
+                    ) {
+
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center
+                        ) {
+
+                            Text(
+                                text = "م",
+                                color = Color.White,
+                                fontSize = 45.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+
+                    Spacer(
+                        modifier = Modifier.width(16.dp)
+                    )
+
+                    Column {
+
+                        Text(
+                            text = "مریم شجاعی",
+                            color = Burgundy,
+                            fontSize = 23.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+
+                        Spacer(
+                            modifier = Modifier.height(4.dp)
+                        )
+
+                        Text(
+                            text = "دستیار هوشمند معلم پایه ششم",
+                            color = Brown,
+                            fontSize = 14.sp
+                        )
+
+                        Spacer(
+                            modifier = Modifier.height(4.dp)
+                        )
+
+                        Text(
+                            text = "مدیریت کلاس • دانش‌آموزان • ارزیابی",
+                            color = Color.Gray,
+                            fontSize = 11.sp
+                        )
+                    }
+                }
+            }
+
+            Spacer(
+                modifier = Modifier.height(18.dp)
+            )
+
+            Text(
+                text = "ابزارهای کلاس",
+                color = Burgundy,
+                fontSize = 20.sp,
+                fontWeight = FontWeight.Bold
+            )
+
+            Spacer(
+                modifier = Modifier.height(10.dp)
+            )
+
+            LazyVerticalGrid(
+                columns = GridCells.Fixed(2),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier.fillMaxSize()
+            ) {
+
+                items(menuItems) { item ->
+
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(120.dp)
+                            .clickable {
+                                selected = item.title
+                            },
+                        shape = RoundedCornerShape(20.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = Color.White
+                        )
+                    ) {
+
+                        Column(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(12.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center
+                        ) {
+
+                            Icon(
+                                imageVector = item.icon,
+                                contentDescription = item.title,
+                                tint = Gold,
+                                modifier = Modifier.size(38.dp)
+                            )
+
+                            Spacer(
+                                modifier = Modifier.height(8.dp)
+                            )
+
+                            Text(
+                                text = item.title,
+                                color = Brown,
+                                fontWeight = FontWeight.SemiBold,
+                                textAlign = TextAlign.Center
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun DetailScreen(
+    title: String,
+    onBack: () -> Unit
+) {
+
+    Scaffold(
+
+        topBar = {
+
+            TopAppBar(
+
+                title = {
+                    Text(text = title)
+                },
+
+                navigationIcon = {
+
+                    IconButton(
+                        onClick = onBack
+                    ) {
+
+                        Icon(
+                            imageVector = Icons.Default.ArrowBack,
+                            contentDescription = "بازگشت"
+                        )
+                    }
+                },
+
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = Burgundy,
+                    titleContentColor = Color.White,
+                    navigationIconContentColor = Color.White
+                )
+            )
+        }
+
+    ) { paddingValues ->
+
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Cream)
+                .padding(paddingValues)
+                .padding(20.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+
+            Spacer(
+                modifier = Modifier.height(20.dp)
+            )
+
+            Text(
+                text = title,
+                fontSize = 28.sp,
+                color = Burgundy,
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center
+            )
+
+            Spacer(
+                modifier = Modifier.height(20.dp)
+            )
+
+            Text(
+                text = "این بخش در نسخه بعدی با امکانات کامل تکمیل می‌شود.",
+                color = Brown,
+                fontSize = 17.sp,
+                textAlign = TextAlign.Center
+            )
+
+            Spacer(
+                modifier = Modifier.height(20.dp)
+            )
+
+            Text(
+                text = "طراحی اصلی برنامه آماده است 🌷",
+                color = Gold,
+                fontWeight = FontWeight.Bold,
+                fontSize = 16.sp
+            )
+        }
+    }
+}
