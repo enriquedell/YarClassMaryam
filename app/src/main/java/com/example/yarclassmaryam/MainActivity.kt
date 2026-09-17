@@ -3731,3 +3731,37 @@ fun BackupScreen(
     }
 }
 }
+@Composable
+fun HandwritingLine(
+    text: String
+) {
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 7.dp)
+    ) {
+
+        Text(
+            text = text,
+            modifier = Modifier.fillMaxWidth(),
+            fontSize = 25.sp,
+            color = Brown,
+            textAlign = TextAlign.Right
+        )
+
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(1.dp)
+                .background(Gold)
+        )
+
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(1.dp)
+                .background(Gold)
+        )
+    }
+}
