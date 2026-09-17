@@ -5,7 +5,17 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -36,13 +46,15 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.lightColorScheme
-import androidx.compose.runtime.*
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -64,7 +76,6 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun YarClassApp() {
 
@@ -130,7 +141,9 @@ fun LoginScreen(
                 fontSize = 58.sp
             )
 
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(
+                modifier = Modifier.height(8.dp)
+            )
 
             Text(
                 text = "ماه زیبا، سلام",
@@ -139,25 +152,46 @@ fun LoginScreen(
                 fontWeight = FontWeight.Bold
             )
 
+            Spacer(
+                modifier = Modifier.height(6.dp)
+            )
+
             Text(
                 text = "به یارِ کلاس مریم خوش آمدید",
                 color = Brown,
-                fontSize = 17.sp
+                fontSize = 17.sp,
+                textAlign = TextAlign.Center
             )
 
-            Spacer(modifier = Modifier.height(28.dp))
-
-            androidx.compose.foundation.Image(
-                painter = painterResource(
-                    id = R.drawable.maryam_photo
-                ),
-                contentDescription = "مریم شجاعی",
-                modifier = Modifier
-                    .size(150.dp)
-                    .clip(RoundedCornerShape(30.dp))
+            Spacer(
+                modifier = Modifier.height(28.dp)
             )
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Card(
+                modifier = Modifier.size(130.dp),
+                shape = RoundedCornerShape(30.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = Burgundy
+                )
+            ) {
+
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+
+                    Text(
+                        text = "م",
+                        color = Color.White,
+                        fontSize = 64.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+
+            Spacer(
+                modifier = Modifier.height(24.dp)
+            )
 
             OutlinedTextField(
                 value = password,
@@ -168,13 +202,15 @@ fun LoginScreen(
                 singleLine = true,
                 leadingIcon = {
                     Icon(
-                        Icons.Default.Lock,
+                        imageVector = Icons.Default.Lock,
                         contentDescription = null
                     )
                 }
             )
 
-            Spacer(modifier = Modifier.height(14.dp))
+            Spacer(
+                modifier = Modifier.height(14.dp)
+            )
 
             Button(
                 onClick = onLogin,
@@ -190,7 +226,9 @@ fun LoginScreen(
                 )
             }
 
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(
+                modifier = Modifier.height(10.dp)
+            )
 
             Text(
                 text = "رمز اولیه: 1234",
@@ -216,23 +254,50 @@ fun HomeScreen() {
 
     val menuItems = listOf(
 
-        MenuItem("دانش‌آموزان", Icons.Default.People),
+        MenuItem(
+            title = "دانش‌آموزان",
+            icon = Icons.Default.People
+        ),
 
-        MenuItem("حضور و غیاب", Icons.Default.CheckCircle),
+        MenuItem(
+            title = "حضور و غیاب",
+            icon = Icons.Default.CheckCircle
+        ),
 
-        MenuItem("ارزشیابی توصیفی", Icons.Default.Star),
+        MenuItem(
+            title = "ارزشیابی توصیفی",
+            icon = Icons.Default.Star
+        ),
 
-        MenuItem("برنامه هفتگی", Icons.Default.DateRange),
+        MenuItem(
+            title = "برنامه هفتگی",
+            icon = Icons.Default.DateRange
+        ),
 
-        MenuItem("آزمون‌ساز", Icons.Default.Edit),
+        MenuItem(
+            title = "آزمون‌ساز",
+            icon = Icons.Default.Edit
+        ),
 
-        MenuItem("تکالیف و یادداشت‌ها", Icons.Default.Note),
+        MenuItem(
+            title = "تکالیف و یادداشت‌ها",
+            icon = Icons.Default.Note
+        ),
 
-        MenuItem("گزارش‌ها", Icons.Default.BarChart),
+        MenuItem(
+            title = "گزارش‌ها",
+            icon = Icons.Default.BarChart
+        ),
 
-        MenuItem("خط تحریری", Icons.Default.Create),
+        MenuItem(
+            title = "خط تحریری",
+            icon = Icons.Default.Create
+        ),
 
-        MenuItem("پشتیبان‌گیری", Icons.Default.Backup)
+        MenuItem(
+            title = "پشتیبان‌گیری",
+            icon = Icons.Default.Backup
+        )
     )
 
     if (selected != null) {
@@ -255,237 +320,3 @@ fun HomeScreen() {
 
                 title = {
                     Text(
-                        text = "یارِ کلاس مریم",
-                        fontWeight = FontWeight.Bold
-                    )
-                },
-
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Burgundy,
-                    titleContentColor = Color.White
-                )
-            )
-        }
-
-    ) { padding ->
-
-        Column(
-
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Cream)
-                .padding(padding)
-                .padding(16.dp)
-
-        ) {
-
-            Card(
-
-                colors = CardDefaults.cardColors(
-                    containerColor = Color.White
-                ),
-
-                shape = RoundedCornerShape(24.dp),
-
-                modifier = Modifier.fillMaxWidth()
-
-            ) {
-
-                Row(
-                    modifier = Modifier.padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-
-                    androidx.compose.foundation.Image(
-
-                        painter = painterResource(
-                            id = R.drawable.maryam_photo
-                        ),
-
-                        contentDescription = null,
-
-                        modifier = Modifier
-                            .size(100.dp)
-                            .clip(RoundedCornerShape(20.dp))
-                    )
-
-                    Spacer(modifier = Modifier.width(16.dp))
-
-                    Column {
-
-                        Text(
-                            text = "مریم شجاعی",
-                            color = Burgundy,
-                            fontSize = 24.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-
-                        Text(
-                            text = "دستیار هوشمند معلم پایه ششم",
-                            color = Brown,
-                            fontSize = 15.sp
-                        )
-
-                        Text(
-                            text = "مدیریت کلاس • دانش‌آموزان • ارزیابی",
-                            color = Color.Gray,
-                            fontSize = 12.sp
-                        )
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            Text(
-                text = "ابزارهای کلاس",
-                color = Burgundy,
-                fontSize = 20.sp,
-                fontWeight = FontWeight.Bold
-            )
-
-            Spacer(modifier = Modifier.height(10.dp))
-
-            LazyVerticalGrid(
-
-                columns = GridCells.Fixed(2),
-
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-
-            ) {
-
-                items(menuItems) { item ->
-
-                    Card(
-
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(120.dp)
-                            .clickable {
-                                selected = item.title
-                            },
-
-                        shape = RoundedCornerShape(20.dp),
-
-                        colors = CardDefaults.cardColors(
-                            containerColor = Color.White
-                        )
-
-                    ) {
-
-                        Column(
-
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .padding(12.dp),
-
-                            horizontalAlignment =
-                                Alignment.CenterHorizontally,
-
-                            verticalArrangement =
-                                Arrangement.Center
-
-                        ) {
-
-                            Icon(
-                                imageVector = item.icon,
-                                contentDescription = null,
-                                tint = Gold,
-                                modifier = Modifier.size(38.dp)
-                            )
-
-                            Spacer(modifier = Modifier.height(8.dp))
-
-                            Text(
-                                text = item.title,
-                                color = Brown,
-                                fontWeight = FontWeight.SemiBold,
-                                textAlign = TextAlign.Center
-                            )
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun DetailScreen(
-    title: String,
-    onBack: () -> Unit
-) {
-
-    Scaffold(
-
-        topBar = {
-
-            TopAppBar(
-
-                title = {
-                    Text(title)
-                },
-
-                navigationIcon = {
-
-                    IconButton(
-                        onClick = onBack
-                    ) {
-
-                        Icon(
-                            imageVector = Icons.Default.ArrowBack,
-                            contentDescription = "بازگشت"
-                        )
-                    }
-                },
-
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Burgundy,
-                    titleContentColor = Color.White,
-                    navigationIconContentColor = Color.White
-                )
-            )
-        }
-
-    ) { padding ->
-
-        Column(
-
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Cream)
-                .padding(padding)
-                .padding(20.dp),
-
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-
-            Text(
-                text = title,
-                fontSize = 28.sp,
-                color = Burgundy,
-                fontWeight = FontWeight.Bold
-            )
-
-            Spacer(modifier = Modifier.height(20.dp))
-
-            Text(
-                text = "این بخش در نسخه بعدی با امکانات کامل تکمیل می‌شود.",
-                color = Brown,
-                fontSize = 17.sp,
-                textAlign = TextAlign.Center
-            )
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            Text(
-                text = "طراحی اصلی برنامه آماده است 🌷",
-                color = Gold,
-                fontWeight = FontWeight.Bold
-            )
-        }
-    }
-}
