@@ -3419,3 +3419,730 @@ fun HomeworkScreen(
 /* =========================================================
    CLASS BOOK
    ========================================================= */
+
+@Composable
+fun ClassBookScreen(
+    storage: AppStorage,
+    onBack: () -> Unit
+) {
+
+    val scope = rememberCoroutineScope()
+    val aiSettings = remember { storage.getAiSettings() }
+
+    var records by remember {
+        mutableStateOf(storage.getRecords())
+    }
+
+    var lesson by remember { mutableStateOf("") }
+    var activity by remember { mutableStateOf("") }
+    var homework by remember { mutableStateOf("") }
+
+    var isLoading by remember { mutableStateOf(false) }
+    var aiError by remember { mutableStateOf("") }
+
+    val date = remember { todayJalaliString() }
+
+    fun suggestWithAi() {
+        if (lesson.isBlank()) {
+            aiError = "ابتدا نام درس را وارد کنید."
+            return
+        }
+
+        aiError = ""
+        isLoading = true
+
+        scope.launch {
+            val prompt =
+                "برای یک دفتر کلاسی، به زبان فارسی و فقط در قالب JSON با ساختار دقیق زیر پاسخ بده، " +
+                    "بدون هیچ توضیح اضافه:\n" +
+                    "{\"activity\": \"یک جمله کوتاه درباره فعالیت کلاسی امروز در درس «$lesson»\", " +
+                    "\"homework\": \"یک جمله کوتاه تکلیف پیشنهادی برای همین جلسه\"}"
+
+            val result = withContext(Dispatchers.IO) {
+                callAiText(aiSettings, prompt)
+            }
+
+            isLoading = false
+
+            if (result == null) {
+                aiError = "پیشنهاد ناموفق بود. کلید API و اتصال اینترنت را در تنظیمات بررسی کنید."
+                return@launch
+            }
+
+            try {
+                val obj = JSONObject(extractJson(result))
+                activity = obj.optString("activity").ifBlank { activity }
+                homework = obj.optString("homework").ifBlank { homework }
+            } catch (_: Exception) {
+                aiError = "پاسخ هوش مصنوعی قابل تفسیر نبود؛ لطفاً دوباره امتحان کنید."
+            }
+        }
+    }
+
+    PageScaffold("دفتر کلاسی", onBack) {
+
+        LazyColumn(
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+
+            item {
+                Text(
+                    "تاریخ: $date",
+                    fontWeight = FontWeight.Bold,
+                    color = Burgundy
+                )
+            }
+
+            item {
+                OutlinedTextField(
+                    value = lesson,
+                    onValueChange = { lesson = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("درس") }
+                )
+            }
+
+            item {
+                OutlinedTextField(
+                    value = activity,
+                    onValueChange = { activity = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("فعالیت انجام‌شده") },
+                    minLines = 2
+                )
+            }
+
+            item {
+                OutlinedTextField(
+                    value = homework,
+                    onValueChange = { homework = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("تکلیف") },
+                    minLines = 2
+                )
+            }
+
+            item {
+                OutlinedButton(
+                    onClick = { suggestWithAi() },
+                    enabled = lesson.isNotBlank() && !isLoading,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        if (isLoading) "در حال پیشنهاد..."
+                        else "🤖 پیشنهاد فعالیت و تکلیف با هوش مصنوعی"
+                    )
+                }
+            }
+
+            if (aiError.isNotBlank()) {
+                item {
+                    Text(aiError, color = Color.Red, fontSize = 13.sp)
+                }
+            }
+
+            item {
+                Button(
+                    onClick = {
+                        if (lesson.isNotBlank()) {
+                            val updated = records + ClassRecord(
+                                System.currentTimeMillis(),
+                                date,
+                                lesson.trim(),
+                                activity.trim(),
+                                homework.trim()
+                            )
+
+                            storage.saveRecords(updated)
+                            records = updated
+
+                            lesson = ""
+                            activity = ""
+                            homework = ""
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("ذخیره در دفتر کلاسی")
+                }
+            }
+
+            item {
+                Text(
+                    "جلسات ثبت‌شده",
+                    fontWeight = FontWeight.Bold,
+                    color = Burgundy
+                )
+            }
+
+            items(
+                records.sortedByDescending { it.id },
+                key = { it.id }
+            ) { item ->
+
+                Card(Modifier.fillMaxWidth()) {
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(14.dp),
+                        verticalAlignment = Alignment.Top
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                "${item.date} - ${item.lesson}",
+                                fontWeight = FontWeight.Bold
+                            )
+
+                            if (item.activity.isNotBlank()) {
+                                Text("فعالیت: ${item.activity}")
+                            }
+
+                            if (item.homework.isNotBlank()) {
+                                Text("تکلیف: ${item.homework}")
+                            }
+                        }
+
+                        DeleteButton {
+                            val updated = records.filter { it.id != item.id }
+                            storage.saveRecords(updated)
+                            records = updated
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/* =========================================================
+   EXAM
+   ========================================================= */
+
+fun createSmartExam(lesson: String, count: Int): List<ExamQuestion> {
+    val safeCount = count.coerceIn(1, 20)
+    val questions = mutableListOf<ExamQuestion>()
+
+    for (i in 1..safeCount) {
+        questions.add(
+            ExamQuestion(
+                "$i. یک سؤال چهارگزینه‌ای درباره درس $lesson اینجا بنویسید.",
+                listOf("گزینه ۱", "گزینه ۲", "گزینه ۳", "گزینه ۴"),
+                0
+            )
+        )
+    }
+
+    return questions
+}
+
+@Composable
+fun ExamScreen(
+    storage: AppStorage,
+    onBack: () -> Unit
+) {
+
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val aiSettings = remember { storage.getAiSettings() }
+
+    var exams by remember { mutableStateOf(storage.getExams()) }
+
+    var title by remember { mutableStateOf("") }
+    var grade by remember { mutableStateOf("") }
+    var lesson by remember { mutableStateOf("") }
+    var count by remember { mutableStateOf("5") }
+
+    var generatedQuestions by remember {
+        mutableStateOf<List<ExamQuestion>>(emptyList())
+    }
+
+    var isLoading by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf("") }
+
+    fun generateOffline() {
+        generatedQuestions = createSmartExam(lesson, count.toIntOrNull() ?: 5)
+    }
+
+    fun generateWithAi() {
+        if (lesson.isBlank()) return
+
+        error = ""
+        isLoading = true
+
+        scope.launch {
+            val n = count.toIntOrNull() ?: 5
+
+            val prompt =
+                "یک آزمون چهارگزینه‌ای به زبان فارسی برای درس «$lesson» با $n سؤال بساز. " +
+                    "فقط یک آرایه JSON برگردان، دقیقاً با این ساختار و بدون هیچ توضیح اضافه:\n" +
+                    "[{\"question\": \"متن سؤال\", \"options\": [\"گزینه۱\",\"گزینه۲\",\"گزینه۳\",\"گزینه۴\"], \"answer\": 0}]\n" +
+                    "answer شماره گزینه صحیح است و از صفر شروع می‌شود."
+
+            val result = withContext(Dispatchers.IO) {
+                callAiText(aiSettings, prompt)
+            }
+
+            isLoading = false
+
+            if (result == null) {
+                error = "تولید ناموفق بود. کلید API و اتصال اینترنت را در تنظیمات بررسی کنید."
+                generateOffline()
+                return@launch
+            }
+
+            try {
+                val arr = JSONArray(extractJson(result))
+                val questions = mutableListOf<ExamQuestion>()
+
+                for (i in 0 until arr.length()) {
+                    val o = arr.optJSONObject(i) ?: continue
+                    val optArray = o.optJSONArray("options") ?: continue
+                    val options = mutableListOf<String>()
+
+                    for (j in 0 until optArray.length()) {
+                        options.add(optArray.optString(j))
+                    }
+
+                    if (options.isEmpty()) continue
+
+                    questions.add(
+                        ExamQuestion(
+                            o.optString("question"),
+                            options,
+                            o.optInt("answer").coerceIn(0, options.size - 1)
+                        )
+                    )
+                }
+
+                if (questions.isEmpty()) {
+                    error = "چیزی تولید نشد؛ لطفاً دوباره تلاش کنید."
+                    generateOffline()
+                } else {
+                    generatedQuestions = questions
+                }
+            } catch (_: Exception) {
+                error = "پاسخ هوش مصنوعی قابل تفسیر نبود؛ لطفاً دوباره امتحان کنید."
+                generateOffline()
+            }
+        }
+    }
+
+    PageScaffold("آزمون‌ساز", onBack) {
+
+        LazyColumn(
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+
+            item {
+                OutlinedTextField(
+                    value = title,
+                    onValueChange = { title = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("عنوان آزمون") }
+                )
+            }
+
+            item {
+                OutlinedTextField(
+                    value = grade,
+                    onValueChange = { grade = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("پایه / کلاس") }
+                )
+            }
+
+            item {
+                OutlinedTextField(
+                    value = lesson,
+                    onValueChange = { lesson = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("درس") }
+                )
+            }
+
+            item {
+                OutlinedTextField(
+                    value = count,
+                    onValueChange = { count = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("تعداد سؤال") },
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Number
+                    )
+                )
+            }
+
+            item {
+                Button(
+                    onClick = { generateWithAi() },
+                    enabled = lesson.isNotBlank() && !isLoading,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        if (isLoading) "در حال تولید..."
+                        else "🤖 ساخت آزمون با هوش مصنوعی"
+                    )
+                }
+            }
+
+            item {
+                OutlinedButton(
+                    onClick = {
+                        if (lesson.isNotBlank()) generateOffline()
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("ساخت آزمون با الگوی آفلاین")
+                }
+            }
+
+            if (error.isNotBlank()) {
+                item {
+                    Text(error, color = Color.Red, fontSize = 13.sp)
+                }
+            }
+
+            if (generatedQuestions.isNotEmpty()) {
+
+                item {
+                    Text(
+                        "پیش‌نمایش آزمون",
+                        fontWeight = FontWeight.Bold,
+                        color = Burgundy
+                    )
+                }
+
+                itemsIndexed(generatedQuestions) { index, q ->
+                    Card(Modifier.fillMaxWidth()) {
+                        Column(Modifier.padding(12.dp)) {
+                            Text(
+                                "${index + 1}. ${q.question}",
+                                fontWeight = FontWeight.Bold
+                            )
+
+                            q.options.forEachIndexed { i, opt ->
+                                Text(
+                                    "${i + 1}) $opt",
+                                    color = if (i == q.answer) Burgundy else DarkBurgundy,
+                                    fontWeight = if (i == q.answer) FontWeight.Bold else FontWeight.Normal
+                                )
+                            }
+                        }
+                    }
+                }
+
+                item {
+                    Row {
+                        Button(
+                            onClick = {
+                                if (title.isNotBlank()) {
+                                    val exam = Exam(
+                                        System.currentTimeMillis(),
+                                        title.trim(),
+                                        grade.trim(),
+                                        lesson.trim(),
+                                        generatedQuestions
+                                    )
+
+                                    val updated = exams + exam
+                                    storage.saveExams(updated)
+                                    exams = updated
+                                }
+                            }
+                        ) {
+                            Text("ذخیره آزمون")
+                        }
+
+                        Spacer(Modifier.width(8.dp))
+
+                        OutlinedButton(
+                            onClick = {
+                                val text = buildString {
+                                    append("$title\n\n")
+
+                                    generatedQuestions.forEachIndexed { i, q ->
+                                        append("${i + 1}. ${q.question}\n")
+
+                                        q.options.forEachIndexed { j, opt ->
+                                            append("   ${j + 1}) $opt\n")
+                                        }
+
+                                        append("\n")
+                                    }
+                                }
+
+                                shareText(context, text)
+                            }
+                        ) {
+                            Text("اشتراک")
+                        }
+                    }
+                }
+            }
+
+            item {
+                Text(
+                    "آزمون‌های ذخیره‌شده",
+                    fontWeight = FontWeight.Bold,
+                    color = Burgundy
+                )
+            }
+
+            items(
+                exams,
+                key = { it.id }
+            ) { exam ->
+
+                Card(Modifier.fillMaxWidth()) {
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text(exam.title, fontWeight = FontWeight.Bold)
+                            Text("${exam.lesson} - ${exam.grade} - ${exam.questions.size} سؤال")
+                        }
+
+                        DeleteButton {
+                            val updated = exams.filter { it.id != exam.id }
+                            storage.saveExams(updated)
+                            exams = updated
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/* =========================================================
+   REPORTS
+   ========================================================= */
+
+@Composable
+fun ReportsScreen(
+    storage: AppStorage,
+    onBack: () -> Unit
+) {
+
+    val students = remember { storage.getStudents() }
+    val attendance = remember { storage.getAttendance() }
+    val evaluations = remember { storage.getEvaluations() }
+
+    PageScaffold("گزارش‌ها", onBack) {
+
+        LazyColumn(
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+
+            item {
+                Card(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(14.dp)) {
+                        Text(
+                            "خلاصه کلی",
+                            fontWeight = FontWeight.Bold,
+                            color = Burgundy
+                        )
+
+                        Spacer(Modifier.height(6.dp))
+
+                        Text("تعداد دانش‌آموزان: ${students.size}")
+                        Text("تعداد رکورد حضور و غیاب: ${attendance.size}")
+                        Text("تعداد ارزشیابی‌ها: ${evaluations.size}")
+                    }
+                }
+            }
+
+            item {
+                Text(
+                    "وضعیت حضور و غیاب هر دانش‌آموز",
+                    fontWeight = FontWeight.Bold,
+                    color = Burgundy
+                )
+            }
+
+            if (students.isEmpty()) {
+                item {
+                    Text(
+                        "هنوز دانش‌آموزی ثبت نشده است.",
+                        color = Color.Gray
+                    )
+                }
+            }
+
+            items(students, key = { "att_${it.id}" }) { student ->
+
+                val records = attendance.filter { it.studentId == student.id }
+                val present = records.count { it.status == "حاضر" }
+                val absent = records.count { it.status == "غایب" }
+                val late = records.count { it.status == "تاخیر" }
+
+                Card(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(12.dp)) {
+                        Text(student.name, fontWeight = FontWeight.Bold)
+                        Text("حاضر: $present   غایب: $absent   تاخیر: $late")
+                    }
+                }
+            }
+
+            item {
+                Text(
+                    "آخرین ارزشیابی هر دانش‌آموز",
+                    fontWeight = FontWeight.Bold,
+                    color = Burgundy
+                )
+            }
+
+            items(students, key = { "eval_${it.id}" }) { student ->
+
+                val studentEvals = evaluations.filter { it.studentId == student.id }
+
+                if (studentEvals.isNotEmpty()) {
+                    Card(Modifier.fillMaxWidth()) {
+                        Column(Modifier.padding(12.dp)) {
+                            Text(student.name, fontWeight = FontWeight.Bold)
+                            Text("تعداد ارزشیابی: ${studentEvals.size}")
+                            Text("آخرین سطح ثبت‌شده: ${studentEvals.last().level}")
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/* =========================================================
+   BACKUP
+   ========================================================= */
+
+@Composable
+fun BackupScreen(
+    storage: AppStorage,
+    onBack: () -> Unit
+) {
+
+    val context = LocalContext.current
+
+    var restoreText by remember { mutableStateOf("") }
+    var message by remember { mutableStateOf("") }
+    var isError by remember { mutableStateOf(false) }
+
+    PageScaffold("پشتیبان‌گیری", onBack) {
+
+        LazyColumn(
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+
+            item {
+                Text(
+                    "پشتیبان‌گیری",
+                    fontWeight = FontWeight.Bold,
+                    color = Burgundy
+                )
+
+                Text(
+                    "یک نسخه از تمام اطلاعات برنامه (دانش‌آموزان، حضور و غیاب، ارزشیابی‌ها، برنامه، دفتر کلاسی، تکالیف و آزمون‌ها) به‌صورت متن JSON تهیه و برای شما ارسال می‌شود تا در جای امنی ذخیره کنید.",
+                    fontSize = 13.sp,
+                    color = Color.DarkGray
+                )
+            }
+
+            item {
+                Button(
+                    onClick = {
+                        val backup = storage.createBackup()
+                        shareText(context, backup)
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("💾 تهیه و اشتراک‌گذاری پشتیبان")
+                }
+            }
+
+            item {
+                Spacer(Modifier.height(10.dp))
+
+                Text(
+                    "بازیابی از پشتیبان",
+                    fontWeight = FontWeight.Bold,
+                    color = Burgundy
+                )
+
+                Text(
+                    "متن JSON پشتیبان قبلی را اینجا پیست کنید. توجه: این کار اطلاعات فعلی برنامه را با اطلاعات داخل پشتیبان جایگزین می‌کند.",
+                    fontSize = 13.sp,
+                    color = Color.DarkGray
+                )
+            }
+
+            item {
+                OutlinedTextField(
+                    value = restoreText,
+                    onValueChange = { restoreText = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("متن پشتیبان (JSON)") },
+                    minLines = 6
+                )
+            }
+
+            item {
+                Button(
+                    onClick = {
+
+                        if (restoreText.isBlank()) {
+                            isError = true
+                            message = "لطفاً متن پشتیبان را وارد کنید."
+                            return@Button
+                        }
+
+                        val success = storage.restoreBackup(restoreText)
+
+                        if (success) {
+                            isError = false
+                            message = "بازیابی با موفقیت انجام شد. برای مشاهده تغییرات، به بخش‌های مربوطه بروید."
+                            restoreText = ""
+                        } else {
+                            isError = true
+                            message = "متن وارد شده یک پشتیبان معتبر از این برنامه نیست."
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("بازیابی اطلاعات")
+                }
+            }
+
+            if (message.isNotBlank()) {
+                item {
+                    Text(
+                        message,
+                        color = if (isError) Color.Red else Burgundy,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+        }
+    }
+}
+
+/* =========================================================
+   INFO (simple static info page, used for "خط تحریری")
+   ========================================================= */
+
+@Composable
+fun InfoScreen(
+    title: String,
+    description: String,
+    onBack: () -> Unit
+) {
+    PageScaffold(title, onBack) {
+        Column(Modifier.fillMaxSize()) {
+            Text(
+                description,
+                color = DarkBurgundy
+            )
+        }
+    }
+}
