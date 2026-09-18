@@ -29,9 +29,8 @@ import androidx.compose.ui.unit.sp
 import androidx.fragment.app.FragmentActivity
 import org.json.JSONArray
 import org.json.JSONObject
-import java.text.SimpleDateFormat
+import java.util.Calendar
 import java.util.Date
-import java.util.Locale
 
 /* =========================================================
    COLORS
@@ -62,6 +61,7 @@ data class Attendance(
 )
 
 data class Evaluation(
+    val id: Long,
     val studentId: Long,
     val lesson: String,
     val level: String,
@@ -69,12 +69,14 @@ data class Evaluation(
 )
 
 data class ScheduleItem(
+    val id: Long,
     val day: String,
     val period: Int,
     val lesson: String
 )
 
 data class ClassRecord(
+    val id: Long,
     val date: String,
     val lesson: String,
     val activity: String,
@@ -82,6 +84,7 @@ data class ClassRecord(
 )
 
 data class Homework(
+    val id: Long,
     val title: String,
     val lesson: String,
     val level: String,
@@ -95,11 +98,72 @@ data class ExamQuestion(
 )
 
 data class Exam(
+    val id: Long,
     val title: String,
     val grade: String,
     val lesson: String,
     val questions: List<ExamQuestion>
 )
+
+/* =========================================================
+   JALALI (PERSIAN) DATE HELPERS
+   ========================================================= */
+
+/**
+ * Converts a Gregorian date to the Jalali (Solar Hijri / Persian) calendar.
+ * Standard public-domain conversion algorithm.
+ */
+private fun gregorianToJalali(gy: Int, gm: Int, gd: Int): Triple<Int, Int, Int> {
+    val gDaysInMonth = intArrayOf(0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334)
+
+    val gy2 = if (gm > 2) gy + 1 else gy
+
+    var days = 355666 +
+        (365 * gy) +
+        ((gy2 + 3) / 4) -
+        ((gy2 + 99) / 100) +
+        ((gy2 + 399) / 400) +
+        gd +
+        gDaysInMonth[gm - 1]
+
+    var jy = -1595 + (33 * (days / 12053))
+    days %= 12053
+
+    jy += 4 * (days / 1461)
+    days %= 1461
+
+    if (days > 365) {
+        jy += (days - 1) / 365
+        days = (days - 1) % 365
+    }
+
+    val jm: Int
+    val jd: Int
+
+    if (days < 186) {
+        jm = 1 + (days / 31)
+        jd = 1 + (days % 31)
+    } else {
+        jm = 7 + ((days - 186) / 30)
+        jd = 1 + ((days - 186) % 30)
+    }
+
+    return Triple(jy, jm, jd)
+}
+
+/** Returns today's date formatted as a Jalali (Persian) date string, e.g. "1404/06/27". */
+private fun todayJalaliString(): String {
+    val cal = Calendar.getInstance()
+    cal.time = Date()
+
+    val gy = cal.get(Calendar.YEAR)
+    val gm = cal.get(Calendar.MONTH) + 1
+    val gd = cal.get(Calendar.DAY_OF_MONTH)
+
+    val (jy, jm, jd) = gregorianToJalali(gy, gm, gd)
+
+    return "%04d/%02d/%02d".format(jy, jm, jd)
+}
 
 /* =========================================================
    STORAGE
@@ -202,6 +266,7 @@ class AppStorage(context: Context) {
         list.forEach {
             array.put(
                 JSONObject().apply {
+                    put("id", it.id)
                     put("studentId", it.studentId)
                     put("lesson", it.lesson)
                     put("level", it.level)
@@ -222,6 +287,7 @@ class AppStorage(context: Context) {
 
             result.add(
                 Evaluation(
+                    if (o.has("id")) o.optLong("id") else System.nanoTime() + i,
                     o.optLong("studentId"),
                     o.optString("lesson"),
                     o.optString("level"),
@@ -239,6 +305,7 @@ class AppStorage(context: Context) {
         list.forEach {
             array.put(
                 JSONObject().apply {
+                    put("id", it.id)
                     put("day", it.day)
                     put("period", it.period)
                     put("lesson", it.lesson)
@@ -258,6 +325,7 @@ class AppStorage(context: Context) {
 
             result.add(
                 ScheduleItem(
+                    if (o.has("id")) o.optLong("id") else System.nanoTime() + i,
                     o.optString("day"),
                     o.optInt("period"),
                     o.optString("lesson")
@@ -274,6 +342,7 @@ class AppStorage(context: Context) {
         list.forEach {
             array.put(
                 JSONObject().apply {
+                    put("id", it.id)
                     put("date", it.date)
                     put("lesson", it.lesson)
                     put("activity", it.activity)
@@ -294,6 +363,7 @@ class AppStorage(context: Context) {
 
             result.add(
                 ClassRecord(
+                    if (o.has("id")) o.optLong("id") else System.nanoTime() + i,
                     o.optString("date"),
                     o.optString("lesson"),
                     o.optString("activity"),
@@ -311,6 +381,7 @@ class AppStorage(context: Context) {
         list.forEach {
             array.put(
                 JSONObject().apply {
+                    put("id", it.id)
                     put("title", it.title)
                     put("lesson", it.lesson)
                     put("level", it.level)
@@ -331,6 +402,7 @@ class AppStorage(context: Context) {
 
             result.add(
                 Homework(
+                    if (o.has("id")) o.optLong("id") else System.nanoTime() + i,
                     o.optString("title"),
                     o.optString("lesson"),
                     o.optString("level"),
@@ -360,6 +432,7 @@ class AppStorage(context: Context) {
 
             array.put(
                 JSONObject().apply {
+                    put("id", exam.id)
                     put("title", exam.title)
                     put("grade", exam.grade)
                     put("lesson", exam.lesson)
@@ -406,6 +479,7 @@ class AppStorage(context: Context) {
 
             result.add(
                 Exam(
+                    if (o.has("id")) o.optLong("id") else System.nanoTime() + i,
                     o.optString("title"),
                     o.optString("grade"),
                     o.optString("lesson"),
@@ -417,6 +491,9 @@ class AppStorage(context: Context) {
         return result
     }
 
+    /**
+     * Creates a full JSON backup of all app data.
+     */
     fun createBackup(): String {
         val root = JSONObject()
 
@@ -456,6 +533,7 @@ class AppStorage(context: Context) {
                 getEvaluations().forEach {
                     put(
                         JSONObject().apply {
+                            put("id", it.id)
                             put("studentId", it.studentId)
                             put("lesson", it.lesson)
                             put("level", it.level)
@@ -472,6 +550,7 @@ class AppStorage(context: Context) {
                 getSchedule().forEach {
                     put(
                         JSONObject().apply {
+                            put("id", it.id)
                             put("day", it.day)
                             put("period", it.period)
                             put("lesson", it.lesson)
@@ -487,6 +566,7 @@ class AppStorage(context: Context) {
                 getRecords().forEach {
                     put(
                         JSONObject().apply {
+                            put("id", it.id)
                             put("date", it.date)
                             put("lesson", it.lesson)
                             put("activity", it.activity)
@@ -503,6 +583,7 @@ class AppStorage(context: Context) {
                 getHomework().forEach {
                     put(
                         JSONObject().apply {
+                            put("id", it.id)
                             put("title", it.title)
                             put("lesson", it.lesson)
                             put("level", it.level)
@@ -519,6 +600,7 @@ class AppStorage(context: Context) {
                 getExams().forEach { exam ->
                     put(
                         JSONObject().apply {
+                            put("id", exam.id)
                             put("title", exam.title)
                             put("grade", exam.grade)
                             put("lesson", exam.lesson)
@@ -555,9 +637,32 @@ class AppStorage(context: Context) {
         return root.toString(2)
     }
 
+    /**
+     * Restores app data from a JSON backup string.
+     * Validates that the payload is a JSON object containing at least
+     * one of the recognized top-level arrays before touching stored data,
+     * so garbage or unrelated JSON does not silently wipe existing data.
+     */
     fun restoreBackup(json: String): Boolean {
         return try {
             val root = JSONObject(json)
+
+            val knownKeys = listOf(
+                "students",
+                "attendance",
+                "evaluations",
+                "schedule",
+                "records",
+                "homework",
+                "exams"
+            )
+
+            val hasKnownKey = knownKeys.any { root.has(it) }
+
+            if (!hasKnownKey) {
+                // Doesn't look like a backup produced by this app.
+                return false
+            }
 
             val students = mutableListOf<Student>()
             val sArray =
@@ -566,16 +671,17 @@ class AppStorage(context: Context) {
             for (i in 0 until sArray.length()) {
                 val o = sArray.optJSONObject(i) ?: continue
 
+                val name = o.optString("name")
+                if (name.isBlank()) continue
+
                 students.add(
                     Student(
-                        o.optLong("id"),
-                        o.optString("name"),
+                        o.optLong("id", System.currentTimeMillis() + i),
+                        name,
                         o.optString("code")
                     )
                 )
             }
-
-            saveStudents(students)
 
             val attendance = mutableListOf<Attendance>()
             val aArray =
@@ -583,6 +689,8 @@ class AppStorage(context: Context) {
 
             for (i in 0 until aArray.length()) {
                 val o = aArray.optJSONObject(i) ?: continue
+
+                if (o.optString("date").isBlank()) continue
 
                 attendance.add(
                     Attendance(
@@ -593,8 +701,6 @@ class AppStorage(context: Context) {
                 )
             }
 
-            saveAttendance(attendance)
-
             val evaluations = mutableListOf<Evaluation>()
             val eArray =
                 root.optJSONArray("evaluations") ?: JSONArray()
@@ -602,8 +708,11 @@ class AppStorage(context: Context) {
             for (i in 0 until eArray.length()) {
                 val o = eArray.optJSONObject(i) ?: continue
 
+                if (o.optString("lesson").isBlank()) continue
+
                 evaluations.add(
                     Evaluation(
+                        if (o.has("id")) o.optLong("id") else System.nanoTime() + i,
                         o.optLong("studentId"),
                         o.optString("lesson"),
                         o.optString("level"),
@@ -612,8 +721,6 @@ class AppStorage(context: Context) {
                 )
             }
 
-            saveEvaluations(evaluations)
-
             val schedule = mutableListOf<ScheduleItem>()
             val schArray =
                 root.optJSONArray("schedule") ?: JSONArray()
@@ -621,16 +728,17 @@ class AppStorage(context: Context) {
             for (i in 0 until schArray.length()) {
                 val o = schArray.optJSONObject(i) ?: continue
 
+                if (o.optString("lesson").isBlank()) continue
+
                 schedule.add(
                     ScheduleItem(
+                        if (o.has("id")) o.optLong("id") else System.nanoTime() + i,
                         o.optString("day"),
                         o.optInt("period"),
                         o.optString("lesson")
                     )
                 )
             }
-
-            saveSchedule(schedule)
 
             val records = mutableListOf<ClassRecord>()
             val rArray =
@@ -639,8 +747,11 @@ class AppStorage(context: Context) {
             for (i in 0 until rArray.length()) {
                 val o = rArray.optJSONObject(i) ?: continue
 
+                if (o.optString("lesson").isBlank()) continue
+
                 records.add(
                     ClassRecord(
+                        if (o.has("id")) o.optLong("id") else System.nanoTime() + i,
                         o.optString("date"),
                         o.optString("lesson"),
                         o.optString("activity"),
@@ -649,8 +760,6 @@ class AppStorage(context: Context) {
                 )
             }
 
-            saveRecords(records)
-
             val homework = mutableListOf<Homework>()
             val hArray =
                 root.optJSONArray("homework") ?: JSONArray()
@@ -658,8 +767,11 @@ class AppStorage(context: Context) {
             for (i in 0 until hArray.length()) {
                 val o = hArray.optJSONObject(i) ?: continue
 
+                if (o.optString("title").isBlank()) continue
+
                 homework.add(
                     Homework(
+                        if (o.has("id")) o.optLong("id") else System.nanoTime() + i,
                         o.optString("title"),
                         o.optString("lesson"),
                         o.optString("level"),
@@ -668,14 +780,14 @@ class AppStorage(context: Context) {
                 )
             }
 
-            saveHomework(homework)
-
             val exams = mutableListOf<Exam>()
             val exArray =
                 root.optJSONArray("exams") ?: JSONArray()
 
             for (i in 0 until exArray.length()) {
                 val o = exArray.optJSONObject(i) ?: continue
+
+                if (o.optString("title").isBlank()) continue
 
                 val qArray =
                     o.optJSONArray("questions") ?: JSONArray()
@@ -694,17 +806,20 @@ class AppStorage(context: Context) {
                         options.add(optionArray.optString(k))
                     }
 
+                    if (options.isEmpty()) continue
+
                     questions.add(
                         ExamQuestion(
                             q.optString("question"),
                             options,
-                            q.optInt("answer")
+                            q.optInt("answer").coerceIn(0, options.size - 1)
                         )
                     )
                 }
 
                 exams.add(
                     Exam(
+                        if (o.has("id")) o.optLong("id") else System.nanoTime() + i,
                         o.optString("title"),
                         o.optString("grade"),
                         o.optString("lesson"),
@@ -713,6 +828,13 @@ class AppStorage(context: Context) {
                 )
             }
 
+            // Only commit once every section has parsed without throwing.
+            saveStudents(students)
+            saveAttendance(attendance)
+            saveEvaluations(evaluations)
+            saveSchedule(schedule)
+            saveRecords(records)
+            saveHomework(homework)
             saveExams(exams)
 
             true
@@ -1218,6 +1340,19 @@ fun PageScaffold(
     }
 }
 
+/**
+ * Small reusable delete button used across list items throughout the app.
+ */
+@Composable
+fun DeleteButton(onClick: () -> Unit) {
+    TextButton(onClick = onClick) {
+        Text(
+            "حذف",
+            color = Color.Red
+        )
+    }
+}
+
 /* =========================================================
    STUDENTS
    ========================================================= */
@@ -1307,21 +1442,14 @@ fun StudentsScreen(
                                     )
                                 }
 
-                                TextButton(
-                                    onClick = {
-                                        val updated =
-                                            students.filter {
-                                                it.id != student.id
-                                            }
+                                DeleteButton {
+                                    val updated =
+                                        students.filter {
+                                            it.id != student.id
+                                        }
 
-                                        storage.saveStudents(updated)
-                                        students = updated
-                                    }
-                                ) {
-                                    Text(
-                                        "حذف",
-                                        color = Color.Red
-                                    )
+                                    storage.saveStudents(updated)
+                                    students = updated
                                 }
                             }
                         }
@@ -1422,10 +1550,7 @@ fun AttendanceScreen(
         mutableStateOf(storage.getAttendance())
     }
 
-    val date = SimpleDateFormat(
-        "yyyy/MM/dd",
-        Locale.getDefault()
-    ).format(Date())
+    val date = remember { todayJalaliString() }
 
     PageScaffold("حضور و غیاب", onBack) {
 
@@ -1751,6 +1876,7 @@ fun EvaluationScreen(
                             val updated =
                                 evaluations +
                                     Evaluation(
+                                        System.currentTimeMillis(),
                                         student.id,
                                         lesson.trim(),
                                         level,
@@ -1779,7 +1905,10 @@ fun EvaluationScreen(
                 )
             }
 
-            items(evaluations) { item ->
+            items(
+                evaluations,
+                key = { it.id }
+            ) { item ->
 
                 val student =
                     students.firstOrNull {
@@ -1790,21 +1919,39 @@ fun EvaluationScreen(
                     Modifier.fillMaxWidth()
                 ) {
 
-                    Column(
-                        Modifier.padding(12.dp)
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(12.dp),
+                        verticalAlignment = Alignment.Top
                     ) {
 
-                        Text(
-                            student?.name
-                                ?: "دانش‌آموز حذف شده",
-                            fontWeight = FontWeight.Bold
-                        )
+                        Column(
+                            Modifier.weight(1f)
+                        ) {
 
-                        Text("درس: ${item.lesson}")
-                        Text("سطح: ${item.level}")
+                            Text(
+                                student?.name
+                                    ?: "دانش‌آموز حذف شده",
+                                fontWeight = FontWeight.Bold
+                            )
 
-                        if (item.note.isNotBlank()) {
-                            Text("توضیح: ${item.note}")
+                            Text("درس: ${item.lesson}")
+                            Text("سطح: ${item.level}")
+
+                            if (item.note.isNotBlank()) {
+                                Text("توضیح: ${item.note}")
+                            }
+                        }
+
+                        DeleteButton {
+                            val updated =
+                                evaluations.filter {
+                                    it.id != item.id
+                                }
+
+                            storage.saveEvaluations(updated)
+                            evaluations = updated
                         }
                     }
                 }
@@ -1887,6 +2034,7 @@ fun ScheduleScreen(
                         val updated =
                             schedule +
                                 ScheduleItem(
+                                    System.currentTimeMillis(),
                                     day.trim(),
                                     period.toIntOrNull() ?: 1,
                                     lesson.trim()
@@ -1909,24 +2057,44 @@ fun ScheduleScreen(
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
 
-                items(schedule) { item ->
+                items(
+                    schedule,
+                    key = { it.id }
+                ) { item ->
 
                     Card(
                         Modifier.fillMaxWidth()
                     ) {
 
                         Row(
-                            Modifier.padding(14.dp)
+                            Modifier
+                                .fillMaxWidth()
+                                .padding(14.dp),
+                            verticalAlignment =
+                                Alignment.CenterVertically
                         ) {
 
-                            Text(
-                                "${item.day} - زنگ ${item.period}",
-                                fontWeight = FontWeight.Bold
-                            )
+                            Column(
+                                Modifier.weight(1f)
+                            ) {
 
-                            Spacer(Modifier.width(12.dp))
+                                Text(
+                                    "${item.day} - زنگ ${item.period}",
+                                    fontWeight = FontWeight.Bold
+                                )
 
-                            Text(item.lesson)
+                                Text(item.lesson)
+                            }
+
+                            DeleteButton {
+                                val updated =
+                                    schedule.filter {
+                                        it.id != item.id
+                                    }
+
+                                storage.saveSchedule(updated)
+                                schedule = updated
+                            }
                         }
                     }
                 }
@@ -2099,6 +2267,7 @@ fun HomeworkScreen(
 
                                         val item =
                                             Homework(
+                                                System.currentTimeMillis(),
                                                 "تکلیف $lesson",
                                                 lesson,
                                                 level,
@@ -2142,7 +2311,10 @@ fun HomeworkScreen(
                 )
             }
 
-            items(homework) { item ->
+            items(
+                homework,
+                key = { it.id }
+            ) { item ->
 
                 Card(
                     Modifier.fillMaxWidth()
@@ -2152,10 +2324,27 @@ fun HomeworkScreen(
                         Modifier.padding(14.dp)
                     ) {
 
-                        Text(
-                            item.title,
-                            fontWeight = FontWeight.Bold
-                        )
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+
+                            Text(
+                                item.title,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.weight(1f)
+                            )
+
+                            DeleteButton {
+                                val updated =
+                                    homework.filter {
+                                        it.id != item.id
+                                    }
+
+                                storage.saveHomework(updated)
+                                homework = updated
+                            }
+                        }
 
                         Spacer(Modifier.height(5.dp))
 
@@ -2206,10 +2395,7 @@ fun ClassBookScreen(
         mutableStateOf("")
     }
 
-    val date = SimpleDateFormat(
-        "yyyy/MM/dd",
-        Locale.getDefault()
-    ).format(Date())
+    val date = remember { todayJalaliString() }
 
     PageScaffold("دفتر کلاسی", onBack) {
 
@@ -2264,6 +2450,7 @@ fun ClassBookScreen(
                             val updated =
                                 records +
                                     ClassRecord(
+                                        System.currentTimeMillis(),
                                         date,
                                         lesson.trim(),
                                         activity.trim(),
@@ -2292,33 +2479,54 @@ fun ClassBookScreen(
                 )
             }
 
-            items(records) { record ->
+            items(
+                records,
+                key = { it.id }
+            ) { record ->
 
                 Card(
                     Modifier.fillMaxWidth()
                 ) {
 
-                    Column(
-                        Modifier.padding(14.dp)
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(14.dp),
+                        verticalAlignment = Alignment.Top
                     ) {
 
-                        Text(
-                            record.date,
-                            fontWeight = FontWeight.Bold
-                        )
+                        Column(
+                            Modifier.weight(1f)
+                        ) {
 
-                        Text("درس: ${record.lesson}")
-
-                        if (record.activity.isNotBlank()) {
                             Text(
-                                "فعالیت: ${record.activity}"
+                                record.date,
+                                fontWeight = FontWeight.Bold
                             )
+
+                            Text("درس: ${record.lesson}")
+
+                            if (record.activity.isNotBlank()) {
+                                Text(
+                                    "فعالیت: ${record.activity}"
+                                )
+                            }
+
+                            if (record.homework.isNotBlank()) {
+                                Text(
+                                    "تکلیف: ${record.homework}"
+                                )
+                            }
                         }
 
-                        if (record.homework.isNotBlank()) {
-                            Text(
-                                "تکلیف: ${record.homework}"
-                            )
+                        DeleteButton {
+                            val updated =
+                                records.filter {
+                                    it.id != record.id
+                                }
+
+                            storage.saveRecords(updated)
+                            records = updated
                         }
                     }
                 }
@@ -2498,31 +2706,46 @@ fun ExamScreen(
                 )
             }
 
-            items(questions) { q ->
+            itemsIndexed(questions) { index, q ->
 
                 Card(
                     Modifier.fillMaxWidth()
                 ) {
 
-                    Column(
-                        Modifier.padding(12.dp)
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(12.dp),
+                        verticalAlignment = Alignment.Top
                     ) {
 
-                        Text(
-                            q.question,
-                            fontWeight = FontWeight.Bold
-                        )
+                        Column(
+                            Modifier.weight(1f)
+                        ) {
 
-                        q.options.forEachIndexed { index, option ->
                             Text(
-                                "${index + 1}. $option"
+                                q.question,
+                                fontWeight = FontWeight.Bold
+                            )
+
+                            q.options.forEachIndexed { optIndex, option ->
+                                Text(
+                                    "${optIndex + 1}. $option"
+                                )
+                            }
+
+                            Text(
+                                "پاسخ صحیح: ${q.answer + 1}",
+                                color = Burgundy
                             )
                         }
 
-                        Text(
-                            "پاسخ صحیح: ${q.answer + 1}",
-                            color = Burgundy
-                        )
+                        DeleteButton {
+                            questions =
+                                questions.filterIndexed { i, _ ->
+                                    i != index
+                                }
+                        }
                     }
                 }
             }
@@ -2539,6 +2762,7 @@ fun ExamScreen(
                         ) {
 
                             val exam = Exam(
+                                System.currentTimeMillis(),
                                 title.trim(),
                                 grade.trim(),
                                 lesson.trim(),
@@ -2570,26 +2794,47 @@ fun ExamScreen(
                 )
             }
 
-            items(exams) { exam ->
+            items(
+                exams,
+                key = { it.id }
+            ) { exam ->
 
                 Card(
                     Modifier.fillMaxWidth()
                 ) {
 
-                    Column(
-                        Modifier.padding(14.dp)
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(14.dp),
+                        verticalAlignment = Alignment.Top
                     ) {
 
-                        Text(
-                            exam.title,
-                            fontWeight = FontWeight.Bold
-                        )
+                        Column(
+                            Modifier.weight(1f)
+                        ) {
 
-                        Text("پایه: ${exam.grade}")
-                        Text("درس: ${exam.lesson}")
-                        Text(
-                            "تعداد سؤال: ${exam.questions.size}"
-                        )
+                            Text(
+                                exam.title,
+                                fontWeight = FontWeight.Bold
+                            )
+
+                            Text("پایه: ${exam.grade}")
+                            Text("درس: ${exam.lesson}")
+                            Text(
+                                "تعداد سؤال: ${exam.questions.size}"
+                            )
+                        }
+
+                        DeleteButton {
+                            val updated =
+                                exams.filter {
+                                    it.id != exam.id
+                                }
+
+                            storage.saveExams(updated)
+                            exams = updated
+                        }
                     }
                 }
             }
@@ -2733,6 +2978,10 @@ fun BackupScreen(
         mutableStateOf("")
     }
 
+    var messageIsError by remember {
+        mutableStateOf(false)
+    }
+
     val launcher =
         androidx.activity.compose.rememberLauncherForActivityResult(
             contract = ActivityResultContracts.OpenDocument()
@@ -2756,14 +3005,17 @@ fun BackupScreen(
                 ) {
                     message =
                         "بازیابی اطلاعات با موفقیت انجام شد."
+                    messageIsError = false
                 } else {
                     message =
                         "فایل پشتیبان معتبر نیست."
+                    messageIsError = true
                 }
 
             } catch (_: Exception) {
                 message =
                     "خطا در خواندن فایل پشتیبان."
+                messageIsError = true
             }
         }
 
@@ -2788,6 +3040,7 @@ fun BackupScreen(
 
                     message =
                         "فایل پشتیبان برای اشتراک‌گذاری آماده شد."
+                    messageIsError = false
                 },
                 modifier = Modifier.fillMaxWidth()
             ) {
@@ -2818,7 +3071,7 @@ fun BackupScreen(
                     Text(
                         message,
                         modifier = Modifier.padding(14.dp),
-                        color = Burgundy,
+                        color = if (messageIsError) Color.Red else Burgundy,
                         fontWeight = FontWeight.Bold
                     )
                 }
