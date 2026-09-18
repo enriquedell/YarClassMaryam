@@ -2,7 +2,10 @@ package com.example.yarclassmaryam
 
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.os.Bundle
+import android.util.Base64
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.biometric.BiometricManager
@@ -28,10 +31,25 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.fragment.app.FragmentActivity
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.ByteArrayOutputStream
+import java.net.HttpURLConnection
+import java.net.URL
 import java.util.Calendar
 import java.util.Date
+
+/*
+ * ====== نکات نصب (قبل از استفاده از قابلیت‌های هوش مصنوعی) ======
+ * ۱) در AndroidManifest.xml این خط را داخل تگ <manifest> اضافه کنید:
+ *      <uses-permission android:name="android.permission.INTERNET" />
+ * ۲) در build.gradle (ماژول app) این وابستگی را اضافه کنید (اگر از قبل ندارید):
+ *      implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
+ * بدون این دو مورد، بخش‌های «تولید با هوش مصنوعی» و «اسکن برنامه از عکس» کار نمی‌کنند.
+ */
 
 /* =========================================================
    COLORS
@@ -104,6 +122,19 @@ data class Exam(
     val grade: String,
     val lesson: String,
     val questions: List<ExamQuestion>
+)
+
+/** One-time teacher profile: name + national code, saved permanently on first setup. */
+data class TeacherProfile(
+    val name: String,
+    val nationalCode: String
+)
+
+/** Which AI provider + API key(s) to use for homework/exam generation and photo scanning. */
+data class AiSettings(
+    val provider: String, // "claude" or "openai"
+    val claudeKey: String,
+    val openAiKey: String
 )
 
 /* =========================================================
@@ -224,6 +255,73 @@ class AppStorage(context: Context) {
         }
 
         return result
+    }
+
+    /**
+     * Appends a bulk-imported list of student names (one per line, optionally
+     * "نام,کد" separated by a comma) to the existing student list, skipping
+     * blank lines and duplicate names. Used by the one-time setup / bulk-add.
+     */
+    fun importStudentNames(rawText: String): List<Student> {
+        val existing = getStudents()
+        val existingNames = existing.map { it.name.trim() }.toMutableSet()
+        val newOnes = mutableListOf<Student>()
+
+        rawText.split("\n").forEachIndexed { i, rawLine ->
+            val line = rawLine.trim()
+            if (line.isEmpty()) return@forEachIndexed
+
+            val parts = line.split(",", "،", "\t")
+            val name = parts[0].trim()
+            val code = if (parts.size > 1) parts[1].trim() else ""
+
+            if (name.isNotEmpty() && existingNames.add(name)) {
+                newOnes.add(
+                    Student(
+                        System.currentTimeMillis() + i,
+                        name,
+                        code
+                    )
+                )
+            }
+        }
+
+        val updated = existing + newOnes
+        saveStudents(updated)
+        return updated
+    }
+
+    fun saveTeacherProfile(profile: TeacherProfile) {
+        prefs.edit()
+            .putString("teacher_name", profile.name)
+            .putString("teacher_national_code", profile.nationalCode)
+            .putBoolean("setup_done", true)
+            .apply()
+    }
+
+    fun getTeacherProfile(): TeacherProfile? {
+        if (!prefs.getBoolean("setup_done", false)) return null
+
+        return TeacherProfile(
+            prefs.getString("teacher_name", "") ?: "",
+            prefs.getString("teacher_national_code", "") ?: ""
+        )
+    }
+
+    fun saveAiSettings(settings: AiSettings) {
+        prefs.edit()
+            .putString("ai_provider", settings.provider)
+            .putString("ai_claude_key", settings.claudeKey)
+            .putString("ai_openai_key", settings.openAiKey)
+            .apply()
+    }
+
+    fun getAiSettings(): AiSettings {
+        return AiSettings(
+            prefs.getString("ai_provider", "claude") ?: "claude",
+            prefs.getString("ai_claude_key", "") ?: "",
+            prefs.getString("ai_openai_key", "") ?: ""
+        )
     }
 
     fun saveAttendance(list: List<Attendance>) {
@@ -846,6 +944,266 @@ class AppStorage(context: Context) {
 }
 
 /* =========================================================
+   AI HELPERS (Claude / OpenAI)
+   Each function makes a blocking network call — always run it from a
+   coroutine on Dispatchers.IO (see callers below). Returns null on any
+   failure (no key set, no internet, bad response) so callers can fall
+   back to the offline template generators.
+   ========================================================= */
+
+/** Sends a text-only prompt to the configured AI provider and returns its reply text. */
+private fun callAiText(settings: AiSettings, prompt: String): String? {
+    return try {
+        when (settings.provider) {
+            "openai" -> callOpenAiText(settings.openAiKey, prompt)
+            else -> callClaudeText(settings.claudeKey, prompt)
+        }
+    } catch (_: Exception) {
+        null
+    }
+}
+
+/** Sends a prompt plus a photo (base64 JPEG) to a vision-capable AI model. */
+private fun callAiVision(settings: AiSettings, prompt: String, base64Image: String): String? {
+    return try {
+        when (settings.provider) {
+            "openai" -> callOpenAiVision(settings.openAiKey, prompt, base64Image)
+            else -> callClaudeVision(settings.claudeKey, prompt, base64Image)
+        }
+    } catch (_: Exception) {
+        null
+    }
+}
+
+private fun postJson(urlString: String, headers: Map<String, String>, body: JSONObject): JSONObject? {
+    val conn = URL(urlString).openConnection() as HttpURLConnection
+
+    return try {
+        conn.requestMethod = "POST"
+        conn.doOutput = true
+        conn.connectTimeout = 30000
+        conn.readTimeout = 60000
+        conn.setRequestProperty("Content-Type", "application/json")
+        headers.forEach { (k, v) -> conn.setRequestProperty(k, v) }
+
+        conn.outputStream.use {
+            it.write(body.toString().toByteArray(Charsets.UTF_8))
+        }
+
+        val code = conn.responseCode
+        val stream = if (code in 200..299) conn.inputStream else conn.errorStream
+        val text = stream?.bufferedReader()?.use { it.readText() } ?: return null
+
+        if (code !in 200..299) return null
+
+        JSONObject(text)
+    } catch (_: Exception) {
+        null
+    } finally {
+        conn.disconnect()
+    }
+}
+
+private fun callClaudeText(apiKey: String, prompt: String): String? {
+    if (apiKey.isBlank()) return null
+
+    val body = JSONObject().apply {
+        put("model", "claude-sonnet-4-6")
+        put("max_tokens", 2000)
+        put(
+            "messages",
+            JSONArray().put(
+                JSONObject().apply {
+                    put("role", "user")
+                    put("content", prompt)
+                }
+            )
+        )
+    }
+
+    val result = postJson(
+        "https://api.anthropic.com/v1/messages",
+        mapOf(
+            "x-api-key" to apiKey,
+            "anthropic-version" to "2023-06-01"
+        ),
+        body
+    ) ?: return null
+
+    val content = result.optJSONArray("content") ?: return null
+    val textParts = StringBuilder()
+
+    for (i in 0 until content.length()) {
+        val block = content.optJSONObject(i) ?: continue
+        if (block.optString("type") == "text") {
+            textParts.append(block.optString("text"))
+        }
+    }
+
+    return textParts.toString().ifBlank { null }
+}
+
+private fun callClaudeVision(apiKey: String, prompt: String, base64Image: String): String? {
+    if (apiKey.isBlank()) return null
+
+    val content = JSONArray()
+        .put(
+            JSONObject().apply {
+                put("type", "image")
+                put(
+                    "source",
+                    JSONObject().apply {
+                        put("type", "base64")
+                        put("media_type", "image/jpeg")
+                        put("data", base64Image)
+                    }
+                )
+            }
+        )
+        .put(
+            JSONObject().apply {
+                put("type", "text")
+                put("text", prompt)
+            }
+        )
+
+    val body = JSONObject().apply {
+        put("model", "claude-sonnet-4-6")
+        put("max_tokens", 2000)
+        put(
+            "messages",
+            JSONArray().put(
+                JSONObject().apply {
+                    put("role", "user")
+                    put("content", content)
+                }
+            )
+        )
+    }
+
+    val result = postJson(
+        "https://api.anthropic.com/v1/messages",
+        mapOf(
+            "x-api-key" to apiKey,
+            "anthropic-version" to "2023-06-01"
+        ),
+        body
+    ) ?: return null
+
+    val blocks = result.optJSONArray("content") ?: return null
+    val textParts = StringBuilder()
+
+    for (i in 0 until blocks.length()) {
+        val block = blocks.optJSONObject(i) ?: continue
+        if (block.optString("type") == "text") {
+            textParts.append(block.optString("text"))
+        }
+    }
+
+    return textParts.toString().ifBlank { null }
+}
+
+private fun callOpenAiText(apiKey: String, prompt: String): String? {
+    if (apiKey.isBlank()) return null
+
+    val body = JSONObject().apply {
+        put("model", "gpt-4o-mini")
+        put(
+            "messages",
+            JSONArray().put(
+                JSONObject().apply {
+                    put("role", "user")
+                    put("content", prompt)
+                }
+            )
+        )
+    }
+
+    val result = postJson(
+        "https://api.openai.com/v1/chat/completions",
+        mapOf("Authorization" to "Bearer $apiKey"),
+        body
+    ) ?: return null
+
+    val choices = result.optJSONArray("choices") ?: return null
+    if (choices.length() == 0) return null
+
+    val message = choices.optJSONObject(0)?.optJSONObject("message") ?: return null
+    return message.optString("content").ifBlank { null }
+}
+
+private fun callOpenAiVision(apiKey: String, prompt: String, base64Image: String): String? {
+    if (apiKey.isBlank()) return null
+
+    val content = JSONArray()
+        .put(
+            JSONObject().apply {
+                put("type", "text")
+                put("text", prompt)
+            }
+        )
+        .put(
+            JSONObject().apply {
+                put("type", "image_url")
+                put(
+                    "image_url",
+                    JSONObject().apply {
+                        put("url", "data:image/jpeg;base64,$base64Image")
+                    }
+                )
+            }
+        )
+
+    val body = JSONObject().apply {
+        put("model", "gpt-4o-mini")
+        put(
+            "messages",
+            JSONArray().put(
+                JSONObject().apply {
+                    put("role", "user")
+                    put("content", content)
+                }
+            )
+        )
+    }
+
+    val result = postJson(
+        "https://api.openai.com/v1/chat/completions",
+        mapOf("Authorization" to "Bearer $apiKey"),
+        body
+    ) ?: return null
+
+    val choices = result.optJSONArray("choices") ?: return null
+    if (choices.length() == 0) return null
+
+    val message = choices.optJSONObject(0)?.optJSONObject("message") ?: return null
+    return message.optString("content").ifBlank { null }
+}
+
+/** Pulls the first {...} or [...] block out of an AI reply, in case it added extra prose. */
+private fun extractJson(text: String): String {
+    val trimmed = text.trim()
+        .removePrefix("```json")
+        .removePrefix("```")
+        .removeSuffix("```")
+        .trim()
+
+    val objStart = trimmed.indexOf('{')
+    val arrStart = trimmed.indexOf('[')
+
+    val start = when {
+        arrStart in 0 until (if (objStart == -1) Int.MAX_VALUE else objStart) -> arrStart
+        objStart != -1 -> objStart
+        else -> return trimmed
+    }
+
+    val endChar = if (trimmed[start] == '[') ']' else '}'
+    val end = trimmed.lastIndexOf(endChar)
+
+    return if (end > start) trimmed.substring(start, end + 1) else trimmed
+}
+
+/* =========================================================
    MAIN ACTIVITY
    ========================================================= */
 
@@ -884,10 +1242,22 @@ fun YarClassApp(storage: AppStorage) {
         mutableStateOf("home")
     }
 
+    var profile by remember {
+        mutableStateOf(storage.getTeacherProfile())
+    }
+
     if (!loggedIn) {
         LoginScreen {
             loggedIn = true
             screen = "home"
+        }
+        return
+    }
+
+    // اولین ورود: فقط یک‌بار کد ملی معلم و لیست دانش‌آموزان گرفته و برای همیشه ذخیره می‌شود.
+    if (profile == null) {
+        SetupScreen(storage) {
+            profile = storage.getTeacherProfile()
         }
         return
     }
@@ -939,6 +1309,11 @@ fun YarClassApp(storage: AppStorage) {
         )
 
         "backup" -> BackupScreen(
+            storage,
+            { screen = "home" }
+        )
+
+        "settings" -> SettingsScreen(
             storage,
             { screen = "home" }
         )
@@ -1122,6 +1497,332 @@ fun LoginScreen(onLogin: () -> Unit) {
 }
 
 /* =========================================================
+   SETUP (one-time: teacher national code + student list import)
+   ========================================================= */
+
+@Composable
+fun SetupScreen(
+    storage: AppStorage,
+    onDone: () -> Unit
+) {
+
+    var teacherName by remember { mutableStateOf("") }
+    var nationalCode by remember { mutableStateOf("") }
+    var studentsText by remember { mutableStateOf("") }
+    var error by remember { mutableStateOf("") }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Cream)
+            .padding(20.dp)
+    ) {
+
+        Column(
+            Modifier.fillMaxSize()
+        ) {
+
+            Text(
+                "🎓 راه‌اندازی اولیه",
+                fontSize = 24.sp,
+                fontWeight = FontWeight.Bold,
+                color = Burgundy
+            )
+
+            Text(
+                "این اطلاعات فقط یک‌بار گرفته می‌شود و برای همیشه ذخیره می‌ماند.",
+                color = Color.DarkGray,
+                fontSize = 13.sp
+            )
+
+            Spacer(Modifier.height(16.dp))
+
+            OutlinedTextField(
+                value = teacherName,
+                onValueChange = { teacherName = it },
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("نام و نام خانوادگی معلم") }
+            )
+
+            Spacer(Modifier.height(8.dp))
+
+            OutlinedTextField(
+                value = nationalCode,
+                onValueChange = { nationalCode = it },
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("کد ملی معلم") },
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Number
+                )
+            )
+
+            Spacer(Modifier.height(14.dp))
+
+            Text(
+                "لیست دانش‌آموزان (اختیاری — هر خط یک نفر؛ می‌توانید نام و کد را با کاما جدا کنید، مثل: «علی رضایی,۱۲۳»). این لیست را از سیدا یا هر منبع دیگری کپی و اینجا پیست کنید.",
+                fontSize = 13.sp,
+                color = Color.DarkGray
+            )
+
+            Spacer(Modifier.height(6.dp))
+
+            OutlinedTextField(
+                value = studentsText,
+                onValueChange = { studentsText = it },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+                label = { Text("اسامی دانش‌آموزان") },
+                minLines = 5
+            )
+
+            if (error.isNotBlank()) {
+                Text(error, color = Color.Red, fontSize = 13.sp)
+            }
+
+            Spacer(Modifier.height(10.dp))
+
+            Button(
+                onClick = {
+                    if (nationalCode.trim().isEmpty()) {
+                        error = "وارد کردن کد ملی معلم الزامی است."
+                        return@Button
+                    }
+
+                    storage.saveTeacherProfile(
+                        TeacherProfile(
+                            teacherName.trim(),
+                            nationalCode.trim()
+                        )
+                    )
+
+                    if (studentsText.isNotBlank()) {
+                        storage.importStudentNames(studentsText)
+                    }
+
+                    onDone()
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("ذخیره و ورود به برنامه")
+            }
+
+            Spacer(Modifier.height(6.dp))
+
+            TextButton(
+                onClick = {
+                    if (nationalCode.trim().isEmpty()) {
+                        error = "وارد کردن کد ملی معلم الزامی است."
+                        return@TextButton
+                    }
+
+                    storage.saveTeacherProfile(
+                        TeacherProfile(
+                            teacherName.trim(),
+                            nationalCode.trim()
+                        )
+                    )
+
+                    onDone()
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("رد شدن از لیست دانش‌آموزان (بعداً اضافه می‌کنم)")
+            }
+        }
+    }
+}
+
+/* =========================================================
+   SETTINGS (profile, AI provider/keys, bulk-add students later)
+   ========================================================= */
+
+@Composable
+fun SettingsScreen(
+    storage: AppStorage,
+    onBack: () -> Unit
+) {
+
+    var profile by remember {
+        mutableStateOf(
+            storage.getTeacherProfile() ?: TeacherProfile("", "")
+        )
+    }
+
+    var ai by remember {
+        mutableStateOf(storage.getAiSettings())
+    }
+
+    var bulkText by remember { mutableStateOf("") }
+    var savedMessage by remember { mutableStateOf("") }
+
+    PageScaffold("تنظیمات", onBack) {
+
+        LazyColumn(
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+
+            item {
+                Text(
+                    "پروفایل معلم",
+                    fontWeight = FontWeight.Bold,
+                    color = Burgundy
+                )
+            }
+
+            item {
+                OutlinedTextField(
+                    value = profile.name,
+                    onValueChange = { profile = profile.copy(name = it) },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("نام معلم") }
+                )
+            }
+
+            item {
+                OutlinedTextField(
+                    value = profile.nationalCode,
+                    onValueChange = { profile = profile.copy(nationalCode = it) },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("کد ملی معلم") }
+                )
+            }
+
+            item {
+                Button(
+                    onClick = {
+                        storage.saveTeacherProfile(profile)
+                        savedMessage = "پروفایل ذخیره شد."
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("ذخیره پروفایل")
+                }
+            }
+
+            item {
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "هوش مصنوعی (برای تکلیف‌ساز، آزمون‌ساز، اسکن برنامه از عکس)",
+                    fontWeight = FontWeight.Bold,
+                    color = Burgundy
+                )
+            }
+
+            item {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    if (ai.provider == "claude") {
+                        Button(onClick = { ai = ai.copy(provider = "claude") }) {
+                            Text("✓ Claude")
+                        }
+                    } else {
+                        OutlinedButton(onClick = { ai = ai.copy(provider = "claude") }) {
+                            Text("Claude")
+                        }
+                    }
+
+                    if (ai.provider == "openai") {
+                        Button(onClick = { ai = ai.copy(provider = "openai") }) {
+                            Text("✓ OpenAI")
+                        }
+                    } else {
+                        OutlinedButton(onClick = { ai = ai.copy(provider = "openai") }) {
+                            Text("OpenAI")
+                        }
+                    }
+                }
+            }
+
+            item {
+                Text(
+                    "سرویس انتخاب‌شده در بالا فعال است؛ هر دو کلید را می‌توانید وارد کنید و هر زمان جابه‌جا شوید.",
+                    fontSize = 12.sp,
+                    color = Color.Gray
+                )
+            }
+
+            item {
+                OutlinedTextField(
+                    value = ai.claudeKey,
+                    onValueChange = { ai = ai.copy(claudeKey = it) },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("کلید API کلود (Claude)") },
+                    visualTransformation = PasswordVisualTransformation()
+                )
+            }
+
+            item {
+                OutlinedTextField(
+                    value = ai.openAiKey,
+                    onValueChange = { ai = ai.copy(openAiKey = it) },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("کلید API اوپن‌ای‌آی (OpenAI)") },
+                    visualTransformation = PasswordVisualTransformation()
+                )
+            }
+
+            item {
+                Button(
+                    onClick = {
+                        storage.saveAiSettings(ai)
+                        savedMessage = "تنظیمات هوش مصنوعی ذخیره شد."
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("ذخیره تنظیمات هوش مصنوعی")
+                }
+            }
+
+            item {
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "افزودن دسته‌جمعی دانش‌آموز",
+                    fontWeight = FontWeight.Bold,
+                    color = Burgundy
+                )
+            }
+
+            item {
+                OutlinedTextField(
+                    value = bulkText,
+                    onValueChange = { bulkText = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("هر خط یک نام (اختیاری: نام,کد)") },
+                    minLines = 4
+                )
+            }
+
+            item {
+                OutlinedButton(
+                    onClick = {
+                        if (bulkText.isNotBlank()) {
+                            storage.importStudentNames(bulkText)
+                            bulkText = ""
+                            savedMessage = "لیست دانش‌آموزان به‌روزرسانی شد."
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("افزودن به لیست دانش‌آموزان")
+                }
+            }
+
+            if (savedMessage.isNotBlank()) {
+                item {
+                    Text(
+                        savedMessage,
+                        color = Burgundy,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+        }
+    }
+}
+
+/* =========================================================
    HOME
    ========================================================= */
 
@@ -1266,6 +1967,15 @@ fun HomeScreen(
                     LightGreen
                 ) {
                     onNavigate("backup")
+                }
+            }
+
+            item {
+                HomeButton(
+                    "⚙️ تنظیمات (پروفایل و هوش مصنوعی)",
+                    LightBlue
+                ) {
+                    onNavigate("settings")
                 }
             }
         }
@@ -1971,6 +2681,10 @@ fun ScheduleScreen(
     onBack: () -> Unit
 ) {
 
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val aiSettings = remember { storage.getAiSettings() }
+
     var schedule by remember {
         mutableStateOf(storage.getSchedule())
     }
@@ -1987,9 +2701,127 @@ fun ScheduleScreen(
         mutableStateOf("")
     }
 
+    var isScanning by remember { mutableStateOf(false) }
+    var scanError by remember { mutableStateOf("") }
+
+    val imagePicker = androidx.activity.compose.rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri ->
+
+        if (uri == null) return@rememberLauncherForActivityResult
+
+        scanError = ""
+        isScanning = true
+
+        scope.launch {
+            val base64 = withContext(Dispatchers.IO) {
+                try {
+                    val input = context.contentResolver.openInputStream(uri)
+                    val bitmap = BitmapFactory.decodeStream(input)
+                    input?.close()
+
+                    if (bitmap == null) {
+                        null
+                    } else {
+                        val outputStream = ByteArrayOutputStream()
+                        bitmap.compress(Bitmap.CompressFormat.JPEG, 80, outputStream)
+                        Base64.encodeToString(outputStream.toByteArray(), Base64.NO_WRAP)
+                    }
+                } catch (_: Exception) {
+                    null
+                }
+            }
+
+            if (base64 == null) {
+                isScanning = false
+                scanError = "خواندن عکس ناموفق بود."
+                return@launch
+            }
+
+            val prompt =
+                "این عکس یک برنامه هفتگی کلاسی درسی است. محتوای آن را بخوان و فقط یک آرایه JSON " +
+                    "برگردان، بدون هیچ توضیح اضافه، دقیقاً با این ساختار برای هر خانه پر از برنامه هفتگی:\n" +
+                    "[{\"day\": \"شنبه\", \"period\": 1, \"lesson\": \"ریاضی\"}]\n" +
+                    "day باید یکی از: شنبه، یکشنبه، دوشنبه، سه‌شنبه، چهارشنبه، پنجشنبه باشد و period شماره زنگ (عدد) باشد."
+
+            val result = withContext(Dispatchers.IO) {
+                callAiVision(aiSettings, prompt, base64)
+            }
+
+            isScanning = false
+
+            if (result == null) {
+                scanError = "استخراج برنامه ناموفق بود. کلید API و اتصال اینترنت را در تنظیمات بررسی کنید."
+                return@launch
+            }
+
+            try {
+                val arr = JSONArray(extractJson(result))
+                val imported = mutableListOf<ScheduleItem>()
+
+                for (i in 0 until arr.length()) {
+                    val o = arr.optJSONObject(i) ?: continue
+                    val d = o.optString("day")
+                    val l = o.optString("lesson")
+                    if (d.isBlank() || l.isBlank()) continue
+
+                    imported.add(
+                        ScheduleItem(
+                            System.currentTimeMillis() + i,
+                            d,
+                            o.optInt("period", 1),
+                            l
+                        )
+                    )
+                }
+
+                if (imported.isEmpty()) {
+                    scanError = "چیزی از عکس تشخیص داده نشد؛ لطفاً از یک عکس واضح‌تر دوباره امتحان کنید."
+                } else {
+                    val updated = schedule + imported
+                    storage.saveSchedule(updated)
+                    schedule = updated
+                }
+            } catch (_: Exception) {
+                scanError = "پاسخ هوش مصنوعی قابل تفسیر نبود؛ لطفاً دوباره امتحان کنید."
+            }
+        }
+    }
+
     PageScaffold("برنامه هفتگی", onBack) {
 
         Column(Modifier.fillMaxSize()) {
+
+            Button(
+                onClick = { imagePicker.launch("image/*") },
+                enabled = !isScanning,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    if (isScanning) "در حال خواندن عکس..."
+                    else "📷 وارد کردن برنامه از روی عکس"
+                )
+            }
+
+            if (scanError.isNotBlank()) {
+                Text(scanError, color = Color.Red, fontSize = 13.sp)
+            }
+
+            Text(
+                "پس از استخراج، حتماً موارد اضافه‌شده را در لیست پایین بررسی و در صورت نیاز اصلاح/حذف کنید — تشخیص هوش مصنوعی ممکن است کامل نباشد.",
+                fontSize = 12.sp,
+                color = Color.Gray
+            )
+
+            Spacer(Modifier.height(10.dp))
+
+            Text(
+                "یا به‌صورت دستی اضافه کنید:",
+                fontWeight = FontWeight.Bold,
+                color = Burgundy
+            )
+
+            Spacer(Modifier.height(6.dp))
 
             OutlinedTextField(
                 value = day,
@@ -2158,6 +2990,8 @@ fun HomeworkScreen(
 ) {
 
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val aiSettings = remember { storage.getAiSettings() }
 
     var homework by remember {
         mutableStateOf(storage.getHomework())
@@ -2177,6 +3011,48 @@ fun HomeworkScreen(
 
     var generated by remember {
         mutableStateOf("")
+    }
+
+    var isLoading by remember {
+        mutableStateOf(false)
+    }
+
+    val hasAiKey =
+        (aiSettings.provider == "openai" && aiSettings.openAiKey.isNotBlank()) ||
+            (aiSettings.provider == "claude" && aiSettings.claudeKey.isNotBlank())
+
+    fun generateOffline() {
+        generated = createSmartHomework(
+            lesson,
+            level,
+            count.toIntOrNull() ?: 5
+        )
+    }
+
+    fun generateWithAi() {
+        if (lesson.isBlank()) return
+
+        isLoading = true
+
+        scope.launch {
+            val prompt =
+                "یک تکلیف درسی به زبان فارسی برای درس «$lesson» " +
+                    "با سطح دشواری «$level» و ${count.toIntOrNull() ?: 5} فعالیت/سؤال بنویس. " +
+                    "فقط متن تکلیف را به‌صورت فهرست شماره‌دار برگردان، بدون مقدمه و توضیح اضافه."
+
+            val result = withContext(Dispatchers.IO) {
+                callAiText(aiSettings, prompt)
+            }
+
+            isLoading = false
+
+            if (result != null) {
+                generated = result.trim()
+            } else {
+                // در صورت نبود اینترنت/کلید معتبر، به تولید آفلاین برمی‌گردیم.
+                generateOffline()
+            }
+        }
     }
 
     PageScaffold("تکلیف‌ساز", onBack) {
@@ -2227,21 +3103,37 @@ fun HomeworkScreen(
             item {
 
                 Button(
+                    onClick = { generateWithAi() },
+                    enabled = lesson.isNotBlank() && !isLoading,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        if (isLoading) "در حال تولید..."
+                        else "🤖 ساخت تکلیف با هوش مصنوعی"
+                    )
+                }
+            }
+
+            if (!hasAiKey) {
+                item {
+                    Text(
+                        "کلید هوش مصنوعی در تنظیمات وارد نشده — در صورت عدم اتصال، از الگوی آفلاین استفاده می‌شود.",
+                        fontSize = 12.sp,
+                        color = Color.Gray
+                    )
+                }
+            }
+
+            item {
+                OutlinedButton(
                     onClick = {
-
                         if (lesson.isNotBlank()) {
-
-                            generated =
-                                createSmartHomework(
-                                    lesson,
-                                    level,
-                                    count.toIntOrNull() ?: 5
-                                )
+                            generateOffline()
                         }
                     },
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text("ساخت تکلیف")
+                    Text("ساخت تکلیف با الگوی آفلاین")
                 }
             }
 
@@ -2546,6 +3438,9 @@ fun ExamScreen(
     onBack: () -> Unit
 ) {
 
+    val scope = rememberCoroutineScope()
+    val aiSettings = remember { storage.getAiSettings() }
+
     var exams by remember {
         mutableStateOf(storage.getExams())
     }
@@ -2578,569 +3473,15 @@ fun ExamScreen(
         mutableStateOf(listOf<ExamQuestion>())
     }
 
-    PageScaffold("آزمون‌ساز", onBack) {
-
-        LazyColumn(
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-
-            item {
-                OutlinedTextField(
-                    value = title,
-                    onValueChange = { title = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text("عنوان آزمون") }
-                )
-            }
-
-            item {
-                OutlinedTextField(
-                    value = grade,
-                    onValueChange = { grade = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text("پایه") }
-                )
-            }
-
-            item {
-                OutlinedTextField(
-                    value = lesson,
-                    onValueChange = { lesson = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text("درس") }
-                )
-            }
-
-            item {
-                Text(
-                    "افزودن سؤال",
-                    fontWeight = FontWeight.Bold,
-                    color = Burgundy
-                )
-            }
-
-            item {
-                OutlinedTextField(
-                    value = question,
-                    onValueChange = { question = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text("متن سؤال") },
-                    minLines = 2
-                )
-            }
-
-            item {
-                OutlinedTextField(
-                    value = optionsText,
-                    onValueChange = { optionsText = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = {
-                        Text("گزینه‌ها را با | جدا کنید")
-                    }
-                )
-            }
-
-            item {
-                OutlinedTextField(
-                    value = answer,
-                    onValueChange = { answer = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = {
-                        Text("شماره گزینه صحیح")
-                    },
-                    keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.Number
-                    )
-                )
-            }
-
-            item {
-
-                OutlinedButton(
-                    onClick = {
-
-                        if (
-                            question.isNotBlank() &&
-                            optionsText.isNotBlank()
-                        ) {
-
-                            val options =
-                                optionsText
-                                    .split("|")
-                                    .map { it.trim() }
-                                    .filter { it.isNotBlank() }
-
-                            if (options.isNotEmpty()) {
-
-                                val correct =
-                                    (answer.toIntOrNull() ?: 1)
-                                        .coerceIn(
-                                            1,
-                                            options.size
-                                        ) - 1
-
-                                questions =
-                                    questions +
-                                        ExamQuestion(
-                                            question.trim(),
-                                            options,
-                                            correct
-                                        )
-
-                                question = ""
-                                optionsText = ""
-                                answer = "1"
-                            }
-                        }
-                    },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("➕ افزودن سؤال")
-                }
-            }
-
-            item {
-
-                Text(
-                    "تعداد سؤال: ${questions.size}",
-                    fontWeight = FontWeight.Bold
-                )
-            }
-
-            itemsIndexed(questions) { index, q ->
-
-                Card(
-                    Modifier.fillMaxWidth()
-                ) {
-
-                    Row(
-                        Modifier
-                            .fillMaxWidth()
-                            .padding(12.dp),
-                        verticalAlignment = Alignment.Top
-                    ) {
-
-                        Column(
-                            Modifier.weight(1f)
-                        ) {
-
-                            Text(
-                                q.question,
-                                fontWeight = FontWeight.Bold
-                            )
-
-                            q.options.forEachIndexed { optIndex, option ->
-                                Text(
-                                    "${optIndex + 1}. $option"
-                                )
-                            }
-
-                            Text(
-                                "پاسخ صحیح: ${q.answer + 1}",
-                                color = Burgundy
-                            )
-                        }
-
-                        DeleteButton {
-                            questions =
-                                questions.filterIndexed { i, _ ->
-                                    i != index
-                                }
-                        }
-                    }
-                }
-            }
-
-            item {
-
-                Button(
-                    onClick = {
-
-                        if (
-                            title.isNotBlank() &&
-                            lesson.isNotBlank() &&
-                            questions.isNotEmpty()
-                        ) {
-
-                            val exam = Exam(
-                                System.currentTimeMillis(),
-                                title.trim(),
-                                grade.trim(),
-                                lesson.trim(),
-                                questions
-                            )
-
-                            val updated = exams + exam
-
-                            storage.saveExams(updated)
-                            exams = updated
-
-                            title = ""
-                            grade = ""
-                            lesson = ""
-                            questions = emptyList()
-                        }
-                    },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("ذخیره آزمون")
-                }
-            }
-
-            item {
-                Text(
-                    "آزمون‌های ذخیره‌شده",
-                    fontWeight = FontWeight.Bold,
-                    color = Burgundy
-                )
-            }
-
-            items(
-                exams,
-                key = { it.id }
-            ) { exam ->
-
-                Card(
-                    Modifier.fillMaxWidth()
-                ) {
-
-                    Row(
-                        Modifier
-                            .fillMaxWidth()
-                            .padding(14.dp),
-                        verticalAlignment = Alignment.Top
-                    ) {
-
-                        Column(
-                            Modifier.weight(1f)
-                        ) {
-
-                            Text(
-                                exam.title,
-                                fontWeight = FontWeight.Bold
-                            )
-
-                            Text("پایه: ${exam.grade}")
-                            Text("درس: ${exam.lesson}")
-                            Text(
-                                "تعداد سؤال: ${exam.questions.size}"
-                            )
-                        }
-
-                        DeleteButton {
-                            val updated =
-                                exams.filter {
-                                    it.id != exam.id
-                                }
-
-                            storage.saveExams(updated)
-                            exams = updated
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-/* =========================================================
-   REPORTS
-   ========================================================= */
-
-@Composable
-fun ReportsScreen(
-    storage: AppStorage,
-    onBack: () -> Unit
-) {
-
-    val students = remember {
-        storage.getStudents()
-    }
-
-    val attendance = remember {
-        storage.getAttendance()
-    }
-
-    val evaluations = remember {
-        storage.getEvaluations()
-    }
-
-    val records = remember {
-        storage.getRecords()
-    }
-
-    val homework = remember {
-        storage.getHomework()
-    }
-
-    val exams = remember {
-        storage.getExams()
-    }
-
-    PageScaffold("گزارش‌ها", onBack) {
-
-        LazyColumn(
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-
-            item {
-                ReportCard(
-                    "👨‍🎓 دانش‌آموزان",
-                    students.size
-                )
-            }
-
-            item {
-                ReportCard(
-                    "✅ رکوردهای حضور و غیاب",
-                    attendance.size
-                )
-            }
-
-            item {
-                ReportCard(
-                    "📊 ارزشیابی‌ها",
-                    evaluations.size
-                )
-            }
-
-            item {
-                ReportCard(
-                    "📚 جلسات دفتر کلاسی",
-                    records.size
-                )
-            }
-
-            item {
-                ReportCard(
-                    "📝 تکالیف",
-                    homework.size
-                )
-            }
-
-            item {
-                ReportCard(
-                    "🧪 آزمون‌ها",
-                    exams.size
-                )
-            }
-        }
-    }
-}
-
-@Composable
-fun ReportCard(
-    title: String,
-    number: Int
-) {
-
-    Card(
-        Modifier.fillMaxWidth()
-    ) {
-
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .padding(18.dp),
-            horizontalArrangement =
-                Arrangement.SpaceBetween,
-            verticalAlignment =
-                Alignment.CenterVertically
-        ) {
-
-            Text(
-                title,
-                fontWeight = FontWeight.Bold
-            )
-
-            Text(
-                number.toString(),
-                fontSize = 24.sp,
-                color = Burgundy,
-                fontWeight = FontWeight.Bold
-            )
-        }
-    }
-}
-
-/* =========================================================
-   BACKUP
-   ========================================================= */
-
-@Composable
-fun BackupScreen(
-    storage: AppStorage,
-    onBack: () -> Unit
-) {
-
-    val context = LocalContext.current
-
-    var message by remember {
-        mutableStateOf("")
-    }
-
-    var messageIsError by remember {
-        mutableStateOf(false)
-    }
-
-    val launcher =
-        androidx.activity.compose.rememberLauncherForActivityResult(
-            contract = ActivityResultContracts.OpenDocument()
-        ) { uri ->
-
-            if (uri == null) {
-                return@rememberLauncherForActivityResult
-            }
-
-            try {
-
-                val json =
-                    context.contentResolver
-                        .openInputStream(uri)
-                        ?.bufferedReader()
-                        ?.use { it.readText() }
-
-                if (
-                    json != null &&
-                    storage.restoreBackup(json)
-                ) {
-                    message =
-                        "بازیابی اطلاعات با موفقیت انجام شد."
-                    messageIsError = false
-                } else {
-                    message =
-                        "فایل پشتیبان معتبر نیست."
-                    messageIsError = true
-                }
-
-            } catch (_: Exception) {
-                message =
-                    "خطا در خواندن فایل پشتیبان."
-                messageIsError = true
-            }
+    var aiCount by remember { mutableStateOf("5") }
+    var isLoading by remember { mutableStateOf(false) }
+    var aiError by remember { mutableStateOf("") }
+
+    fun generateQuestionsWithAi() {
+        if (lesson.isBlank()) {
+            aiError = "ابتدا نام درس را وارد کنید."
+            return
         }
 
-    PageScaffold(
-        "پشتیبان‌گیری و بازیابی",
-        onBack
-    ) {
-
-        Column(
-            Modifier.fillMaxSize(),
-            verticalArrangement =
-                Arrangement.spacedBy(12.dp)
-        ) {
-
-            Button(
-                onClick = {
-
-                    shareText(
-                        context,
-                        storage.createBackup()
-                    )
-
-                    message =
-                        "فایل پشتیبان برای اشتراک‌گذاری آماده شد."
-                    messageIsError = false
-                },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("💾 تهیه پشتیبان")
-            }
-
-            OutlinedButton(
-                onClick = {
-                    launcher.launch(
-                        arrayOf(
-                            "application/json",
-                            "text/plain",
-                            "*/*"
-                        )
-                    )
-                },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("📂 بازیابی پشتیبان")
-            }
-
-            if (message.isNotBlank()) {
-
-                Card(
-                    Modifier.fillMaxWidth()
-                ) {
-
-                    Text(
-                        message,
-                        modifier = Modifier.padding(14.dp),
-                        color = if (messageIsError) Color.Red else Burgundy,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-            }
-
-            Text(
-                "برای پشتیبان‌گیری، اطلاعات برنامه به صورت متن JSON برای اشتراک‌گذاری آماده می‌شود.",
-                color = Color.Gray,
-                fontSize = 13.sp
-            )
-        }
-    }
-}
-
-/* =========================================================
-   INFO SCREEN
-   ========================================================= */
-
-@Composable
-fun InfoScreen(
-    title: String,
-    message: String,
-    onBack: () -> Unit
-) {
-
-    PageScaffold(title, onBack) {
-
-        Card(
-            Modifier.fillMaxWidth()
-        ) {
-
-            Column(
-                Modifier.padding(20.dp)
-            ) {
-
-                Text(
-                    title,
-                    fontSize = 24.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Burgundy
-                )
-
-                Spacer(Modifier.height(12.dp))
-
-                Text(message)
-            }
-        }
-    }
-}
-
-/* =========================================================
-   SHARE
-   ========================================================= */
-
-fun shareText(
-    context: Context,
-    text: String
-) {
-
-    val intent = Intent(Intent.ACTION_SEND).apply {
-        type = "text/plain"
-        putExtra(Intent.EXTRA_TEXT, text)
-    }
-
-    context.startActivity(
-        Intent.createChooser(
-            intent,
-            "اشتراک‌گذاری"
-        )
-    )
-}
+        aiError = ""
+        isLo
