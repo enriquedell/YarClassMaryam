@@ -52,6 +52,10 @@ import java.util.Date
  * ۲) در build.gradle (ماژول app) این وابستگی را اضافه کنید (اگر از قبل ندارید):
  *      implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
  * بدون این دو مورد، بخش‌های «تولید با هوش مصنوعی» و «اسکن برنامه از عکس» کار نمی‌کنند.
+ *
+ * توجه امنیتی: رمز ورود فعلی به‌صورت ثابت "1234" در کد نوشته شده است. برای استفاده
+ * واقعی بهتر است این رمز قابل‌تغییر و در SharedPreferences ذخیره شود (نمونه‌ی مشابه
+ * saveTeacherProfile در کلاس AppStorage).
  */
 
 /* =========================================================
@@ -217,6 +221,22 @@ private fun todayJalaliString(): String {
 }
 
 /* =========================================================
+   SHARE HELPER
+   ========================================================= */
+
+/** Opens the system share sheet with the given plain text. */
+private fun shareText(context: Context, text: String) {
+    val intent = Intent(Intent.ACTION_SEND).apply {
+        type = "text/plain"
+        putExtra(Intent.EXTRA_TEXT, text)
+    }
+
+    context.startActivity(
+        Intent.createChooser(intent, "اشتراک‌گذاری")
+    )
+}
+
+/* =========================================================
    STORAGE
    ========================================================= */
 
@@ -287,7 +307,7 @@ class AppStorage(context: Context) {
         val newOnes = mutableListOf<Student>()
 
         rawText.split("\n").forEachIndexed { i, rawLine ->
-            val line = rawLine.trim()
+            val line = rawLine.trim().trimEnd('\r')
             if (line.isEmpty()) return@forEachIndexed
 
             val parts = line.split(",", "،", "\t")
@@ -3399,37 +3419,3 @@ fun HomeworkScreen(
 /* =========================================================
    CLASS BOOK
    ========================================================= */
-
-@Composable
-fun ClassBookScreen(
-    storage: AppStorage,
-    onBack: () -> Unit
-) {
-
-    val scope = rememberCoroutineScope()
-    val aiSettings = remember { storage.getAiSettings() }
-
-    var records by remember {
-        mutableStateOf(storage.getRecords())
-    }
-
-    var lesson by remember {
-        mutableStateOf("")
-    }
-
-    var activity by remember {
-        mutableStateOf("")
-    }
-
-    var homework by remember {
-        mutableStateOf("")
-    }
-
-    var isLoading by remember { mutableStateOf(false) }
-    var aiError by remember { mutableStateOf("") }
-
-    val date = remember { todayJalaliString() }
-
-    fun suggestWithAi() {
-        if (lesson.isBlank()) {
-            aiError = "ابتدا ن
