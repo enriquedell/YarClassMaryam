@@ -55,5 +55,9 @@ dependencies {
 
     implementation("androidx.core:core-splashscreen:1.0.1")
 
+    implementation("androidx.fragment:fragment-ktx:1.8.5")
+
+    implementation("androidx.biometric:biometric:1.1.0")
+
     debugImplementation("androidx.compose.ui:ui-tooling")
 }
