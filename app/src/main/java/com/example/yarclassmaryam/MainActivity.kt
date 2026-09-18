@@ -13,6 +13,9 @@ import androidx.biometric.BiometricPrompt
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -62,6 +65,22 @@ private val LightPink = Color(0xFFFFE5EC)
 private val LightGreen = Color(0xFFE3F5E8)
 private val LightBlue = Color(0xFFE2F0FF)
 private val LightYellow = Color(0xFFFFF5C7)
+private val Gold = Color(0xFFC9A24B)
+
+private val AppColorScheme = lightColorScheme(
+    primary = Burgundy,
+    onPrimary = Color.White,
+    primaryContainer = LightPink,
+    onPrimaryContainer = DarkBurgundy,
+    secondary = Gold,
+    onSecondary = Color.White,
+    background = Cream,
+    onBackground = DarkBurgundy,
+    surface = Color.White,
+    onSurface = DarkBurgundy,
+    surfaceVariant = LightPink,
+    error = Color(0xFFB3261E)
+)
 
 /* =========================================================
    DATA
@@ -1216,11 +1235,13 @@ class MainActivity : FragmentActivity() {
             CompositionLocalProvider(
                 LocalLayoutDirection provides LayoutDirection.Rtl
             ) {
-                Surface(
-                    modifier = Modifier.fillMaxSize(),
-                    color = Cream
-                ) {
-                    YarClassApp(AppStorage(this))
+                MaterialTheme(colorScheme = AppColorScheme) {
+                    Surface(
+                        modifier = Modifier.fillMaxSize(),
+                        color = MaterialTheme.colorScheme.background
+                    ) {
+                        YarClassApp(AppStorage(this))
+                    }
                 }
             }
         }
@@ -1256,9 +1277,11 @@ fun YarClassApp(storage: AppStorage) {
 
     // اولین ورود: فقط یک‌بار کد ملی معلم و لیست دانش‌آموزان گرفته و برای همیشه ذخیره می‌شود.
     if (profile == null) {
-        SetupScreen(storage) {
-            profile = storage.getTeacherProfile()
-        }
+        SetupScreen(
+            storage,
+            onDone = { profile = storage.getTeacherProfile() },
+            onLogout = { loggedIn = false }
+        )
         return
     }
 
@@ -1503,7 +1526,8 @@ fun LoginScreen(onLogin: () -> Unit) {
 @Composable
 fun SetupScreen(
     storage: AppStorage,
-    onDone: () -> Unit
+    onDone: () -> Unit,
+    onLogout: () -> Unit
 ) {
 
     var teacherName by remember { mutableStateOf("") }
@@ -1522,12 +1546,22 @@ fun SetupScreen(
             Modifier.fillMaxSize()
         ) {
 
-            Text(
-                "🎓 راه‌اندازی اولیه",
-                fontSize = 24.sp,
-                fontWeight = FontWeight.Bold,
-                color = Burgundy
-            )
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    "🎓 راه‌اندازی اولیه",
+                    fontSize = 24.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Burgundy
+                )
+
+                TextButton(onClick = onLogout) {
+                    Text("خروج", color = Burgundy)
+                }
+            }
 
             Text(
                 "این اطلاعات فقط یک‌بار گرفته می‌شود و برای همیشه ذخیره می‌ماند.",
@@ -1858,124 +1892,146 @@ fun HomeScreen(
         }
     ) { padding ->
 
-        LazyColumn(
-            modifier = Modifier
+        Column(
+            Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
 
-            item {
-                Text(
-                    "پنل مدیریت کلاس",
-                    fontSize = 25.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Burgundy
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                shape = RoundedCornerShape(24.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = Burgundy
                 )
-
-                Text(
-                    "همه اطلاعات کلاس شما در یک مکان",
-                    color = Color.DarkGray
-                )
-            }
-
-            item {
-                HomeButton(
-                    "👨‍🎓 دانش‌آموزان",
-                    LightPink
+            ) {
+                Column(
+                    Modifier.padding(20.dp)
                 ) {
-                    onNavigate("students")
+                    Text(
+                        "پنل مدیریت کلاس",
+                        fontSize = 22.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
+
+                    Text(
+                        "همه اطلاعات کلاس شما در یک مکان",
+                        color = LightPink,
+                        fontSize = 13.sp
+                    )
                 }
             }
 
-            item {
-                HomeButton(
-                    "✅ حضور و غیاب",
-                    LightGreen
-                ) {
-                    onNavigate("attendance")
-                }
-            }
+            LazyVerticalGrid(
+                columns = GridCells.Fixed(2),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 12.dp),
+                contentPadding = PaddingValues(bottom = 20.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
 
-            item {
-                HomeButton(
-                    "📊 ارزشیابی",
-                    LightBlue
-                ) {
-                    onNavigate("evaluation")
+                item {
+                    HomeButton(
+                        "👨‍🎓",
+                        "دانش‌آموزان",
+                        "افزودن و مدیریت لیست",
+                        LightPink
+                    ) { onNavigate("students") }
                 }
-            }
 
-            item {
-                HomeButton(
-                    "📅 برنامه هفتگی",
-                    LightYellow
-                ) {
-                    onNavigate("schedule")
+                item {
+                    HomeButton(
+                        "✅",
+                        "حضور و غیاب",
+                        "ثبت روزانه",
+                        LightGreen
+                    ) { onNavigate("attendance") }
                 }
-            }
 
-            item {
-                HomeButton(
-                    "📝 تکلیف‌ساز",
-                    LightPink
-                ) {
-                    onNavigate("homework")
+                item {
+                    HomeButton(
+                        "📊",
+                        "ارزشیابی",
+                        "ثبت سطح و توضیح",
+                        LightBlue
+                    ) { onNavigate("evaluation") }
                 }
-            }
 
-            item {
-                HomeButton(
-                    "📚 دفتر کلاسی",
-                    LightGreen
-                ) {
-                    onNavigate("classbook")
+                item {
+                    HomeButton(
+                        "📅",
+                        "برنامه هفتگی",
+                        "دستی یا از روی عکس",
+                        LightYellow
+                    ) { onNavigate("schedule") }
                 }
-            }
 
-            item {
-                HomeButton(
-                    "🧪 آزمون‌ساز",
-                    LightBlue
-                ) {
-                    onNavigate("exam")
+                item {
+                    HomeButton(
+                        "📝",
+                        "تکلیف‌ساز",
+                        "تولید با هوش مصنوعی",
+                        LightPink
+                    ) { onNavigate("homework") }
                 }
-            }
 
-            item {
-                HomeButton(
-                    "📈 گزارش‌ها",
-                    LightYellow
-                ) {
-                    onNavigate("reports")
+                item {
+                    HomeButton(
+                        "📚",
+                        "دفتر کلاسی",
+                        "فعالیت و تکلیف هر جلسه",
+                        LightGreen
+                    ) { onNavigate("classbook") }
                 }
-            }
 
-            item {
-                HomeButton(
-                    "✍️ خط تحریری",
-                    LightPink
-                ) {
-                    onNavigate("handwriting")
+                item {
+                    HomeButton(
+                        "🧪",
+                        "آزمون‌ساز",
+                        "تولید با هوش مصنوعی",
+                        LightBlue
+                    ) { onNavigate("exam") }
                 }
-            }
 
-            item {
-                HomeButton(
-                    "💾 پشتیبان‌گیری و بازیابی",
-                    LightGreen
-                ) {
-                    onNavigate("backup")
+                item {
+                    HomeButton(
+                        "📈",
+                        "گزارش‌ها",
+                        "آمار کلی کلاس",
+                        LightYellow
+                    ) { onNavigate("reports") }
                 }
-            }
 
-            item {
-                HomeButton(
-                    "⚙️ تنظیمات (پروفایل و هوش مصنوعی)",
-                    LightBlue
-                ) {
-                    onNavigate("settings")
+                item {
+                    HomeButton(
+                        "✍️",
+                        "خط تحریری",
+                        "تمرین‌های دست‌نویسی",
+                        LightPink
+                    ) { onNavigate("handwriting") }
+                }
+
+                item {
+                    HomeButton(
+                        "💾",
+                        "پشتیبان‌گیری",
+                        "ذخیره و بازیابی داده",
+                        LightGreen
+                    ) { onNavigate("backup") }
+                }
+
+                item {
+                    HomeButton(
+                        "⚙️",
+                        "تنظیمات",
+                        "پروفایل و هوش مصنوعی",
+                        LightBlue
+                    ) { onNavigate("settings") }
                 }
             }
         }
@@ -1984,25 +2040,48 @@ fun HomeScreen(
 
 @Composable
 fun HomeButton(
+    emoji: String,
     title: String,
+    subtitle: String,
     background: Color,
     onClick: () -> Unit
 ) {
     Card(
         onClick = onClick,
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(20.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(120.dp),
+        shape = RoundedCornerShape(18.dp),
         colors = CardDefaults.cardColors(
             containerColor = background
+        ),
+        elevation = CardDefaults.cardElevation(
+            defaultElevation = 2.dp
         )
     ) {
-        Text(
-            title,
-            modifier = Modifier.padding(20.dp),
-            fontSize = 18.sp,
-            fontWeight = FontWeight.Bold,
-            color = DarkBurgundy
-        )
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(14.dp),
+            verticalArrangement = Arrangement.Center
+        ) {
+            Text(emoji, fontSize = 26.sp)
+
+            Spacer(Modifier.height(6.dp))
+
+            Text(
+                title,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Bold,
+                color = DarkBurgundy
+            )
+
+            Text(
+                subtitle,
+                fontSize = 11.sp,
+                color = DarkBurgundy.copy(alpha = 0.7f)
+            )
+        }
     }
 }
 
@@ -2453,6 +2532,42 @@ fun EvaluationScreen(
         mutableStateOf("")
     }
 
+    val scope = rememberCoroutineScope()
+    val aiSettings = remember { storage.getAiSettings() }
+    var isSuggesting by remember { mutableStateOf(false) }
+    var suggestError by remember { mutableStateOf("") }
+
+    fun suggestNoteWithAi() {
+        val student = selectedStudent
+
+        if (student == null || lesson.isBlank()) {
+            suggestError = "ابتدا دانش‌آموز و درس را انتخاب کنید."
+            return
+        }
+
+        suggestError = ""
+        isSuggesting = true
+
+        scope.launch {
+            val prompt =
+                "یک توضیح کوتاه ارزشیابی توصیفی به زبان فارسی برای دانش‌آموزی به نام «${student.name}» " +
+                    "در درس «$lesson» با سطح «$level» بنویس. فقط متن توضیح را در یک تا دو جمله برگردان، " +
+                    "بدون مقدمه و بدون گیومه."
+
+            val result = withContext(Dispatchers.IO) {
+                callAiText(aiSettings, prompt)
+            }
+
+            isSuggesting = false
+
+            if (result != null) {
+                note = result.trim()
+            } else {
+                suggestError = "پیشنهاد ناموفق بود. کلید API و اتصال اینترنت را در تنظیمات بررسی کنید."
+            }
+        }
+    }
+
     PageScaffold("ارزشیابی", onBack) {
 
         LazyColumn(
@@ -2570,6 +2685,25 @@ fun EvaluationScreen(
                     },
                     minLines = 3
                 )
+            }
+
+            item {
+                OutlinedButton(
+                    onClick = { suggestNoteWithAi() },
+                    enabled = selectedStudent != null && lesson.isNotBlank() && !isSuggesting,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        if (isSuggesting) "در حال پیشنهاد..."
+                        else "🤖 پیشنهاد توضیح با هوش مصنوعی"
+                    )
+                }
+            }
+
+            if (suggestError.isNotBlank()) {
+                item {
+                    Text(suggestError, color = Color.Red, fontSize = 13.sp)
+                }
             }
 
             item {
@@ -3272,6 +3406,9 @@ fun ClassBookScreen(
     onBack: () -> Unit
 ) {
 
+    val scope = rememberCoroutineScope()
+    val aiSettings = remember { storage.getAiSettings() }
+
     var records by remember {
         mutableStateOf(storage.getRecords())
     }
@@ -3288,200 +3425,11 @@ fun ClassBookScreen(
         mutableStateOf("")
     }
 
-    val date = remember { todayJalaliString() }
-
-    PageScaffold("دفتر کلاسی", onBack) {
-
-        LazyColumn(
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-
-            item {
-                Text(
-                    "تاریخ: $date",
-                    fontWeight = FontWeight.Bold,
-                    color = Burgundy
-                )
-            }
-
-            item {
-                OutlinedTextField(
-                    value = lesson,
-                    onValueChange = { lesson = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text("درس") }
-                )
-            }
-
-            item {
-                OutlinedTextField(
-                    value = activity,
-                    onValueChange = { activity = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text("فعالیت کلاس") },
-                    minLines = 3
-                )
-            }
-
-            item {
-                OutlinedTextField(
-                    value = homework,
-                    onValueChange = { homework = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text("تکلیف") },
-                    minLines = 2
-                )
-            }
-
-            item {
-
-                Button(
-                    onClick = {
-
-                        if (lesson.isNotBlank()) {
-
-                            val updated =
-                                records +
-                                    ClassRecord(
-                                        System.currentTimeMillis(),
-                                        date,
-                                        lesson.trim(),
-                                        activity.trim(),
-                                        homework.trim()
-                                    )
-
-                            storage.saveRecords(updated)
-                            records = updated
-
-                            lesson = ""
-                            activity = ""
-                            homework = ""
-                        }
-                    },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("ثبت در دفتر کلاس")
-                }
-            }
-
-            item {
-                Text(
-                    "سوابق کلاس",
-                    fontWeight = FontWeight.Bold,
-                    color = Burgundy
-                )
-            }
-
-            items(
-                records,
-                key = { it.id }
-            ) { record ->
-
-                Card(
-                    Modifier.fillMaxWidth()
-                ) {
-
-                    Row(
-                        Modifier
-                            .fillMaxWidth()
-                            .padding(14.dp),
-                        verticalAlignment = Alignment.Top
-                    ) {
-
-                        Column(
-                            Modifier.weight(1f)
-                        ) {
-
-                            Text(
-                                record.date,
-                                fontWeight = FontWeight.Bold
-                            )
-
-                            Text("درس: ${record.lesson}")
-
-                            if (record.activity.isNotBlank()) {
-                                Text(
-                                    "فعالیت: ${record.activity}"
-                                )
-                            }
-
-                            if (record.homework.isNotBlank()) {
-                                Text(
-                                    "تکلیف: ${record.homework}"
-                                )
-                            }
-                        }
-
-                        DeleteButton {
-                            val updated =
-                                records.filter {
-                                    it.id != record.id
-                                }
-
-                            storage.saveRecords(updated)
-                            records = updated
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-/* =========================================================
-   EXAM
-   ========================================================= */
-
-@Composable
-fun ExamScreen(
-    storage: AppStorage,
-    onBack: () -> Unit
-) {
-
-    val scope = rememberCoroutineScope()
-    val aiSettings = remember { storage.getAiSettings() }
-
-    var exams by remember {
-        mutableStateOf(storage.getExams())
-    }
-
-    var title by remember {
-        mutableStateOf("")
-    }
-
-    var grade by remember {
-        mutableStateOf("")
-    }
-
-    var lesson by remember {
-        mutableStateOf("")
-    }
-
-    var question by remember {
-        mutableStateOf("")
-    }
-
-    var optionsText by remember {
-        mutableStateOf("")
-    }
-
-    var answer by remember {
-        mutableStateOf("1")
-    }
-
-    var questions by remember {
-        mutableStateOf(listOf<ExamQuestion>())
-    }
-
-    var aiCount by remember { mutableStateOf("5") }
     var isLoading by remember { mutableStateOf(false) }
     var aiError by remember { mutableStateOf("") }
 
-    fun generateQuestionsWithAi() {
-        if (lesson.isBlank()) {
-            aiError = "ابتدا نام درس را وارد کنید."
-            return
-        }
+    val date = remember { todayJalaliString() }
 
-        aiError = ""
-        isLo
+    fun suggestWithAi() {
+        if (lesson.isBlank()) {
+            aiError = "ابتدا ن
