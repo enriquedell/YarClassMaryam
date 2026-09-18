@@ -1,12 +1,13 @@
 package com.example.yarclassmaryam
 
 import android.content.Context
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.biometric.BiometricManager
+import androidx.biometric.BiometricPrompt
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,53 +17,66 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Assessment
 import androidx.compose.material.icons.filled.Backup
-import androidx.compose.material.icons.filled.CalendarToday
+import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Create
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.ExitToApp
+import androidx.compose.material.icons.filled.Fingerprint
+import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.Quiz
-import androidx.compose.material.icons.filled.Star
-import androidx.compose.material.icons.filled.Today
+import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.School
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Divider
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.fragment.app.FragmentActivity
 import org.json.JSONArray
 import org.json.JSONObject
 import java.text.SimpleDateFormat
@@ -70,24 +84,14 @@ import java.util.Date
 import java.util.Locale
 import kotlin.random.Random
 
-
-// =========================
-// رنگ‌های برنامه
-// =========================
-
-private val Burgundy = Color(0xFF861638)
-private val DarkBurgundy = Color(0xFF64102A)
-private val Gold = Color(0xFFD4B24C)
-private val Cream = Color(0xFFFFF8EE)
-private val LightPink = Color(0xFFFFE1E9)
-private val LightGreen = Color(0xFFE8F7D5)
-private val LightBlue = Color(0xFFE3F1FF)
-private val LightYellow = Color(0xFFFFF2B8)
-
-
-// =========================
-// مدل‌های اطلاعاتی
-// =========================
+private val Burgundy = Color(0xFF7A1538)
+private val DarkBurgundy = Color(0xFF4A0920)
+private val Gold = Color(0xFFD4AF37)
+private val Cream = Color(0xFFFFF8E7)
+private val LightPink = Color(0xFFFFE5EC)
+private val LightGreen = Color(0xFFE3F5E8)
+private val LightBlue = Color(0xFFE2F0FF)
+private val LightYellow = Color(0xFFFFF5C7)
 
 data class Student(
     val id: Long,
@@ -128,85 +132,64 @@ data class Homework(
     val text: String
 )
 
+data class ExamQuestion(
+    val question: String,
+    val options: List<String>,
+    val answer: Int
+)
 
-// =========================
-// ذخیره‌سازی اطلاعات
-// =========================
+data class Exam(
+    val title: String,
+    val grade: String,
+    val lesson: String,
+    val questions: List<ExamQuestion>
+)
 
 class AppStorage(context: Context) {
 
-    private val pref =
-        context.getSharedPreferences(
-            "yar_class_storage",
-            Context.MODE_PRIVATE
-        )
+    private val prefs =
+        context.getSharedPreferences("yar_class_storage", Context.MODE_PRIVATE)
 
-    // ---------- دانش‌آموزان ----------
+    private fun saveArray(key: String, array: JSONArray) {
+        prefs.edit().putString(key, array.toString()).apply()
+    }
 
-    fun getStudents(): MutableList<Student> {
+    private fun readArray(key: String): JSONArray {
+        return try {
+            JSONArray(prefs.getString(key, "[]") ?: "[]")
+        } catch (_: Exception) {
+            JSONArray()
+        }
+    }
 
+    fun saveStudents(list: List<Student>) {
+        val array = JSONArray()
+
+        list.forEach {
+            array.put(
+                JSONObject().apply {
+                    put("id", it.id)
+                    put("name", it.name)
+                    put("code", it.code)
+                }
+            )
+        }
+
+        saveArray("students", array)
+    }
+
+    fun getStudents(): List<Student> {
         val result = mutableListOf<Student>()
-
-        val array = JSONArray(
-            pref.getString("students", "[]")
-        )
+        val array = readArray("students")
 
         for (i in 0 until array.length()) {
-
             val o = array.getJSONObject(i)
 
             result.add(
                 Student(
-                    id = o.getLong("id"),
-                    name = o.getString("name"),
-                    code = o.getString("code")
-                )
-            )
-        }
-
-        return result
-    }
-
-    fun saveStudents(list: List<Student>) {
-
-        val array = JSONArray()
-
-        list.forEach {
-
-            val o = JSONObject()
-
-            o.put("id", it.id)
-            o.put("name", it.name)
-            o.put("code", it.code)
-
-            array.put(o)
-        }
-
-        pref.edit()
-            .putString("students", array.toString())
-            .apply()
-    }
-
-
-    // ---------- حضور و غیاب ----------
-
-    fun getAttendance(): MutableList<Attendance> {
-
-        val result = mutableListOf<Attendance>()
-
-        val array = JSONArray(
-            pref.getString("attendance", "[]")
-        )
-
-        for (i in 0 until array.length()) {
-
-            val o = array.getJSONObject(i)
-
-            result.add(
-                Attendance(
-                    studentId = o.getLong("studentId"),
-                    date = o.getString("date"),
-                    status = o.getString("status")
+                    o.optLong("id"),
+                    o.optString("name"),
+                    o.optString("code")
                 )
             )
         }
@@ -215,46 +198,33 @@ class AppStorage(context: Context) {
     }
 
     fun saveAttendance(list: List<Attendance>) {
-
         val array = JSONArray()
 
         list.forEach {
-
-            val o = JSONObject()
-
-            o.put("studentId", it.studentId)
-            o.put("date", it.date)
-            o.put("status", it.status)
-
-            array.put(o)
+            array.put(
+                JSONObject().apply {
+                    put("studentId", it.studentId)
+                    put("date", it.date)
+                    put("status", it.status)
+                }
+            )
         }
 
-        pref.edit()
-            .putString("attendance", array.toString())
-            .apply()
+        saveArray("attendance", array)
     }
 
-
-    // ---------- ارزشیابی ----------
-
-    fun getEvaluations(): MutableList<Evaluation> {
-
-        val result = mutableListOf<Evaluation>()
-
-        val array = JSONArray(
-            pref.getString("evaluations", "[]")
-        )
+    fun getAttendance(): List<Attendance> {
+        val result = mutableListOf<Attendance>()
+        val array = readArray("attendance")
 
         for (i in 0 until array.length()) {
-
             val o = array.getJSONObject(i)
 
             result.add(
-                Evaluation(
-                    studentId = o.getLong("studentId"),
-                    lesson = o.getString("lesson"),
-                    level = o.getString("level"),
-                    note = o.getString("note")
+                Attendance(
+                    o.optLong("studentId"),
+                    o.optString("date"),
+                    o.optString("status")
                 )
             )
         }
@@ -263,46 +233,35 @@ class AppStorage(context: Context) {
     }
 
     fun saveEvaluations(list: List<Evaluation>) {
-
         val array = JSONArray()
 
         list.forEach {
-
-            val o = JSONObject()
-
-            o.put("studentId", it.studentId)
-            o.put("lesson", it.lesson)
-            o.put("level", it.level)
-            o.put("note", it.note)
-
-            array.put(o)
+            array.put(
+                JSONObject().apply {
+                    put("studentId", it.studentId)
+                    put("lesson", it.lesson)
+                    put("level", it.level)
+                    put("note", it.note)
+                }
+            )
         }
 
-        pref.edit()
-            .putString("evaluations", array.toString())
-            .apply()
+        saveArray("evaluations", array)
     }
 
-
-    // ---------- برنامه هفتگی ----------
-
-    fun getSchedule(): MutableList<ScheduleItem> {
-
-        val result = mutableListOf<ScheduleItem>()
-
-        val array = JSONArray(
-            pref.getString("schedule", "[]")
-        )
+    fun getEvaluations(): List<Evaluation> {
+        val result = mutableListOf<Evaluation>()
+        val array = readArray("evaluations")
 
         for (i in 0 until array.length()) {
-
             val o = array.getJSONObject(i)
 
             result.add(
-                ScheduleItem(
-                    day = o.getString("day"),
-                    period = o.getInt("period"),
-                    lesson = o.getString("lesson")
+                Evaluation(
+                    o.optLong("studentId"),
+                    o.optString("lesson"),
+                    o.optString("level"),
+                    o.optString("note")
                 )
             )
         }
@@ -311,46 +270,33 @@ class AppStorage(context: Context) {
     }
 
     fun saveSchedule(list: List<ScheduleItem>) {
-
         val array = JSONArray()
 
         list.forEach {
-
-            val o = JSONObject()
-
-            o.put("day", it.day)
-            o.put("period", it.period)
-            o.put("lesson", it.lesson)
-
-            array.put(o)
+            array.put(
+                JSONObject().apply {
+                    put("day", it.day)
+                    put("period", it.period)
+                    put("lesson", it.lesson)
+                }
+            )
         }
 
-        pref.edit()
-            .putString("schedule", array.toString())
-            .apply()
+        saveArray("schedule", array)
     }
 
-
-    // ---------- دفتر کلاس ----------
-
-    fun getRecords(): MutableList<ClassRecord> {
-
-        val result = mutableListOf<ClassRecord>()
-
-        val array = JSONArray(
-            pref.getString("records", "[]")
-        )
+    fun getSchedule(): List<ScheduleItem> {
+        val result = mutableListOf<ScheduleItem>()
+        val array = readArray("schedule")
 
         for (i in 0 until array.length()) {
-
             val o = array.getJSONObject(i)
 
             result.add(
-                ClassRecord(
-                    date = o.getString("date"),
-                    lesson = o.getString("lesson"),
-                    activity = o.getString("activity"),
-                    homework = o.getString("homework")
+                ScheduleItem(
+                    o.optString("day"),
+                    o.optInt("period"),
+                    o.optString("lesson")
                 )
             )
         }
@@ -359,47 +305,35 @@ class AppStorage(context: Context) {
     }
 
     fun saveRecords(list: List<ClassRecord>) {
-
         val array = JSONArray()
 
         list.forEach {
-
-            val o = JSONObject()
-
-            o.put("date", it.date)
-            o.put("lesson", it.lesson)
-            o.put("activity", it.activity)
-            o.put("homework", it.homework)
-
-            array.put(o)
+            array.put(
+                JSONObject().apply {
+                    put("date", it.date)
+                    put("lesson", it.lesson)
+                    put("activity", it.activity)
+                    put("homework", it.homework)
+                }
+            )
         }
 
-        pref.edit()
-            .putString("records", array.toString())
-            .apply()
+        saveArray("records", array)
     }
 
-
-    // ---------- تکالیف ----------
-
-    fun getHomework(): MutableList<Homework> {
-
-        val result = mutableListOf<Homework>()
-
-        val array = JSONArray(
-            pref.getString("homework", "[]")
-        )
+    fun getRecords(): List<ClassRecord> {
+        val result = mutableListOf<ClassRecord>()
+        val array = readArray("records")
 
         for (i in 0 until array.length()) {
-
             val o = array.getJSONObject(i)
 
             result.add(
-                Homework(
-                    title = o.getString("title"),
-                    lesson = o.getString("lesson"),
-                    level = o.getString("level"),
-                    text = o.getString("text")
+                ClassRecord(
+                    o.optString("date"),
+                    o.optString("lesson"),
+                    o.optString("activity"),
+                    o.optString("homework")
                 )
             )
         }
@@ -408,588 +342,779 @@ class AppStorage(context: Context) {
     }
 
     fun saveHomework(list: List<Homework>) {
-
         val array = JSONArray()
 
         list.forEach {
-
-            val o = JSONObject()
-
-            o.put("title", it.title)
-            o.put("lesson", it.lesson)
-            o.put("level", it.level)
-            o.put("text", it.text)
-
-            array.put(o)
+            array.put(
+                JSONObject().apply {
+                    put("title", it.title)
+                    put("lesson", it.lesson)
+                    put("level", it.level)
+                    put("text", it.text)
+                }
+            )
         }
 
-        pref.edit()
-            .putString("homework", array.toString())
-            .apply()
+        saveArray("homework", array)
     }
 
+    fun getHomework(): List<Homework> {
+        val result = mutableListOf<Homework>()
+        val array = readArray("homework")
 
-    // ---------- پشتیبان ----------
+        for (i in 0 until array.length()) {
+            val o = array.getJSONObject(i)
 
-    fun makeBackup(): String {
+            result.add(
+                Homework(
+                    o.optString("title"),
+                    o.optString("lesson"),
+                    o.optString("level"),
+                    o.optString("text")
+                )
+            )
+        }
+
+        return result
+    }
+
+    fun createBackup(): String {
 
         val root = JSONObject()
 
-        root.put(
-            "students",
-            pref.getString("students", "[]")
-        )
+        root.put("students", JSONArray().apply {
+            getStudents().forEach {
+                put(
+                    JSONObject().apply {
+                        put("id", it.id)
+                        put("name", it.name)
+                        put("code", it.code)
+                    }
+                )
+            }
+        })
 
-        root.put(
-            "attendance",
-            pref.getString("attendance", "[]")
-        )
+        root.put("attendance", JSONArray().apply {
+            getAttendance().forEach {
+                put(
+                    JSONObject().apply {
+                        put("studentId", it.studentId)
+                        put("date", it.date)
+                        put("status", it.status)
+                    }
+                )
+            }
+        })
 
-        root.put(
-            "evaluations",
-            pref.getString("evaluations", "[]")
-        )
+        root.put("evaluations", JSONArray().apply {
+            getEvaluations().forEach {
+                put(
+                    JSONObject().apply {
+                        put("studentId", it.studentId)
+                        put("lesson", it.lesson)
+                        put("level", it.level)
+                        put("note", it.note)
+                    }
+                )
+            }
+        })
 
-        root.put(
-            "schedule",
-            pref.getString("schedule", "[]")
-        )
+        root.put("schedule", JSONArray().apply {
+            getSchedule().forEach {
+                put(
+                    JSONObject().apply {
+                        put("day", it.day)
+                        put("period", it.period)
+                        put("lesson", it.lesson)
+                    }
+                )
+            }
+        })
 
-        root.put(
-            "records",
-            pref.getString("records", "[]")
-        )
+        root.put("records", JSONArray().apply {
+            getRecords().forEach {
+                put(
+                    JSONObject().apply {
+                        put("date", it.date)
+                        put("lesson", it.lesson)
+                        put("activity", it.activity)
+                        put("homework", it.homework)
+                    }
+                )
+            }
+        })
 
-        root.put(
-            "homework",
-            pref.getString("homework", "[]")
-        )
+        root.put("homework", JSONArray().apply {
+            getHomework().forEach {
+                put(
+                    JSONObject().apply {
+                        put("title", it.title)
+                        put("lesson", it.lesson)
+                        put("level", it.level)
+                        put("text", it.text)
+                    }
+                )
+            }
+        })
 
         return root.toString(2)
     }
 
+    fun restoreBackup(json: String): Boolean {
 
-    fun restoreBackup(text: String) {
+        return try {
 
-        val root = JSONObject(text)
+            val root = JSONObject(json)
 
-        pref.edit()
-            .putString(
-                "students",
-                root.optString("students", "[]")
-            )
-            .putString(
-                "attendance",
-                root.optString("attendance", "[]")
-            )
-            .putString(
-                "evaluations",
-                root.optString("evaluations", "[]")
-            )
-            .putString(
-                "schedule",
-                root.optString("schedule", "[]")
-            )
-            .putString(
-                "records",
-                root.optString("records", "[]")
-            )
-            .putString(
-                "homework",
-                root.optString("homework", "[]")
-            )
-            .apply()
+            val students = mutableListOf<Student>()
+            val sArray = root.optJSONArray("students") ?: JSONArray()
+
+            for (i in 0 until sArray.length()) {
+                val o = sArray.getJSONObject(i)
+
+                students.add(
+                    Student(
+                        o.optLong("id"),
+                        o.optString("name"),
+                        o.optString("code")
+                    )
+                )
+            }
+
+            saveStudents(students)
+
+            val attendance = mutableListOf<Attendance>()
+            val aArray = root.optJSONArray("attendance") ?: JSONArray()
+
+            for (i in 0 until aArray.length()) {
+                val o = aArray.getJSONObject(i)
+
+                attendance.add(
+                    Attendance(
+                        o.optLong("studentId"),
+                        o.optString("date"),
+                        o.optString("status")
+                    )
+                )
+            }
+
+            saveAttendance(attendance)
+
+            val evaluations = mutableListOf<Evaluation>()
+            val eArray = root.optJSONArray("evaluations") ?: JSONArray()
+
+            for (i in 0 until eArray.length()) {
+                val o = eArray.getJSONObject(i)
+
+                evaluations.add(
+                    Evaluation(
+                        o.optLong("studentId"),
+                        o.optString("lesson"),
+                        o.optString("level"),
+                        o.optString("note")
+                    )
+                )
+            }
+
+            saveEvaluations(evaluations)
+
+            val schedule = mutableListOf<ScheduleItem>()
+            val schArray = root.optJSONArray("schedule") ?: JSONArray()
+
+            for (i in 0 until schArray.length()) {
+                val o = schArray.getJSONObject(i)
+
+                schedule.add(
+                    ScheduleItem(
+                        o.optString("day"),
+                        o.optInt("period"),
+                        o.optString("lesson")
+                    )
+                )
+            }
+
+            saveSchedule(schedule)
+
+            val records = mutableListOf<ClassRecord>()
+            val rArray = root.optJSONArray("records") ?: JSONArray()
+
+            for (i in 0 until rArray.length()) {
+                val o = rArray.getJSONObject(i)
+
+                records.add(
+                    ClassRecord(
+                        o.optString("date"),
+                        o.optString("lesson"),
+                        o.optString("activity"),
+                        o.optString("homework")
+                    )
+                )
+            }
+
+            saveRecords(records)
+
+            val homework = mutableListOf<Homework>()
+            val hArray = root.optJSONArray("homework") ?: JSONArray()
+
+            for (i in 0 until hArray.length()) {
+                val o = hArray.getJSONObject(i)
+
+                homework.add(
+                    Homework(
+                        o.optString("title"),
+                        o.optString("lesson"),
+                        o.optString("level"),
+                        o.optString("text")
+                    )
+                )
+            }
+
+            saveHomework(homework)
+
+            true
+
+        } catch (_: Exception) {
+            false
+        }
     }
 }
 
-
-// =========================
-// MainActivity
-// =========================
-
-class MainActivity : ComponentActivity() {
+class MainActivity : FragmentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
-
         super.onCreate(savedInstanceState)
 
-        val storage = AppStorage(this)
-
         setContent {
-
-            CompositionLocalProvider(
-                LocalLayoutDirection provides LayoutDirection.Rtl
+            Surface(
+                modifier = Modifier.fillMaxSize(),
+                color = Cream
             ) {
-
-                YarClassApp(storage)
+                YarClassApp(AppStorage(this))
             }
         }
     }
 }
 
-
-// =========================
-// برنامه اصلی
-// =========================
-
 @Composable
 fun YarClassApp(storage: AppStorage) {
 
-    var loggedIn by remember {
-        mutableStateOf(false)
-    }
-
-    var screen by remember {
-        mutableStateOf("home")
-    }
+    var loggedIn by remember { mutableStateOf(false) }
+    var screen by remember { mutableStateOf("home") }
+    var refreshKey by remember { mutableStateOf(0) }
 
     if (!loggedIn) {
 
-        LoginScreen {
-
-            loggedIn = true
-        }
+        LoginScreen(
+            onLogin = {
+                loggedIn = true
+                screen = "home"
+            }
+        )
 
         return
     }
 
     when (screen) {
 
-        "home" -> {
+        "home" -> HomeScreen(
+            onNavigate = {
+                screen = it
+            },
+            onLogout = {
+                loggedIn = false
+                screen = "home"
+            }
+        )
 
-            HomeScreen(
-                onOpen = {
-                    screen = it
-                }
-            )
-        }
+        "students" -> StudentsScreen(
+            storage = storage,
+            onBack = {
+                screen = "home"
+            }
+        )
 
-        "students" -> {
+        "attendance" -> AttendanceScreen(
+            storage = storage,
+            onBack = {
+                screen = "home"
+            }
+        )
 
-            StudentsScreen(
-                storage = storage,
-                onBack = {
-                    screen = "home"
-                }
-            )
-        }
+        "evaluation" -> EvaluationScreen(
+            storage = storage,
+            onBack = {
+                screen = "home"
+            }
+        )
 
-        "attendance" -> {
+        "schedule" -> ScheduleScreen(
+            storage = storage,
+            onBack = {
+                screen = "home"
+            }
+        )
 
-            AttendanceScreen(
-                storage = storage,
-                onBack = {
-                    screen = "home"
-                }
-            )
-        }
+        "homework" -> HomeworkScreen(
+            storage = storage,
+            onBack = {
+                screen = "home"
+            }
+        )
 
-        "evaluation" -> {
+        "classbook" -> ClassBookScreen(
+            storage = storage,
+            onBack = {
+                screen = "home"
+            }
+        )
 
-            EvaluationScreen(
-                storage = storage,
-                onBack = {
-                    screen = "home"
-                }
-            )
-        }
+        "reports" -> ReportsScreen(
+            storage = storage,
+            onBack = {
+                screen = "home"
+            }
+        )
 
-        "schedule" -> {
+        "exam" -> ExamScreen(
+            storage = storage,
+            onBack = {
+                screen = "home"
+            }
+        )
 
-            ScheduleScreen(
-                storage = storage,
-                onBack = {
-                    screen = "home"
-                }
-            )
-        }
+        "backup" -> BackupScreen(
+            storage = storage,
+            onBack = {
+                refreshKey++
+                screen = "home"
+            }
+        )
 
-        "homework" -> {
-
-            HomeworkScreen(
-                storage = storage,
-                onBack = {
-                    screen = "home"
-                }
-            )
-        }
-
-        "classbook" -> {
-
-            ClassBookScreen(
-                storage = storage,
-                onBack = {
-                    screen = "home"
-                }
-            )
-        }
-
-        "exam" -> {
-
-            SimpleInfoScreen(
-                title = "آزمون‌ساز",
-                text = "در این بخش می‌توانید آزمون‌های کلاسی طراحی و مدیریت کنید.",
-                icon = Icons.Default.Quiz,
-                onBack = {
-                    screen = "home"
-                }
-            )
-        }
-
-        "reports" -> {
-
-            ReportsScreen(
-                storage = storage,
-                onBack = {
-                    screen = "home"
-                }
-            )
-        }
-
-        "handwriting" -> {
-
-            SimpleInfoScreen(
-                title = "خط تحریری",
-                text = "نمونه‌ها و تمرین‌های خط تحریری را از این بخش مدیریت کنید.",
-                icon = Icons.Default.Create,
-                onBack = {
-                    screen = "home"
-                }
-            )
-        }
-
-        "backup" -> {
-
-            BackupScreen(
-                storage = storage,
-                onBack = {
-                    screen = "home"
-                }
-            )
-        }
+        "handwriting" -> InfoScreen(
+            title = "خط تحریری",
+            text = "در این بخش می‌توان تمرین‌های خط تحریری دانش‌آموزان را مدیریت کرد.",
+            onBack = {
+                screen = "home"
+            }
+        )
     }
+
+    // جلوگیری از حذف refreshKey توسط کامپایلر
+    refreshKey.hashCode()
 }
-
-
-// =========================
-// صفحه ورود
-// =========================
 
 @Composable
 fun LoginScreen(
     onLogin: () -> Unit
 ) {
 
-    var password by remember {
-        mutableStateOf("")
+    val context = LocalContext.current
+
+    var pin by remember { mutableStateOf("") }
+    var error by remember { mutableStateOf("") }
+
+    fun biometricLogin() {
+
+        val activity = context as? FragmentActivity
+
+        if (activity == null) {
+            error = "خطا در شناسایی دستگاه"
+            return
+        }
+
+        val manager = BiometricManager.from(activity)
+
+        val result = manager.canAuthenticate(
+            BiometricManager.Authenticators.BIOMETRIC_STRONG or
+                    BiometricManager.Authenticators.BIOMETRIC_WEAK
+        )
+
+        if (result != BiometricManager.BIOMETRIC_SUCCESS) {
+            error = "اثر انگشت یا قابلیت بیومتریک روی دستگاه فعال نیست."
+            return
+        }
+
+        val executor = activity.mainExecutor
+
+        val prompt = BiometricPrompt(
+            activity,
+            executor,
+            object : BiometricPrompt.AuthenticationCallback() {
+
+                override fun onAuthenticationSucceeded(
+                    result: BiometricPrompt.AuthenticationResult
+                ) {
+                    onLogin()
+                }
+
+                override fun onAuthenticationError(
+                    errorCode: Int,
+                    errString: CharSequence
+                ) {
+                    error = errString.toString()
+                }
+
+                override fun onAuthenticationFailed() {
+                    error = "اثر انگشت شناسایی نشد."
+                }
+            }
+        )
+
+        val promptInfo = BiometricPrompt.PromptInfo.Builder()
+            .setTitle("ورود به یار کلاس مریم")
+            .setSubtitle("برای ورود، اثر انگشت خود را تأیید کنید")
+            .setNegativeButtonText("ورود با رمز")
+            .build()
+
+        prompt.authenticate(promptInfo)
     }
 
-    var error by remember {
-        mutableStateOf(false)
-    }
-
-    Column(
+    Box(
         modifier = Modifier
             .fillMaxSize()
             .background(Cream)
             .padding(24.dp),
-
-        horizontalAlignment = Alignment.CenterHorizontally,
-
-        verticalArrangement = Arrangement.Center
+        contentAlignment = Alignment.Center
     ) {
 
-        Box(
-            modifier = Modifier
-                .size(110.dp)
-                .clip(
-                    RoundedCornerShape(30.dp)
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(28.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = Color.White
+            ),
+            elevation = CardDefaults.cardElevation(8.dp)
+        ) {
+
+            Column(
+                modifier = Modifier.padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+
+                Icon(
+                    imageVector = Icons.Default.School,
+                    contentDescription = null,
+                    tint = Burgundy,
+                    modifier = Modifier.height(70.dp)
                 )
-                .background(Burgundy),
 
-            contentAlignment = Alignment.Center
-        ) {
+                Text(
+                    text = "یار کلاس مریم",
+                    fontSize = 28.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Burgundy
+                )
 
-            Text(
-                text = "م",
-                color = Color.White,
-                fontSize = 60.sp,
-                fontWeight = FontWeight.Bold
-            )
-        }
+                Spacer(Modifier.height(8.dp))
 
-        Spacer(
-            modifier = Modifier.height(20.dp)
-        )
+                Text(
+                    text = "سامانه مدیریت کلاس",
+                    color = DarkBurgundy
+                )
 
-        Text(
-            text = "یار کلاس مریم",
-            fontSize = 30.sp,
-            fontWeight = FontWeight.Bold,
-            color = Burgundy
-        )
+                Spacer(Modifier.height(30.dp))
 
-        Spacer(
-            modifier = Modifier.height(30.dp)
-        )
+                OutlinedTextField(
+                    value = pin,
+                    onValueChange = {
+                        pin = it
+                        error = ""
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = {
+                        Text("رمز ورود")
+                    },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.NumberPassword
+                    ),
+                    visualTransformation = PasswordVisualTransformation()
+                )
 
-        OutlinedTextField(
-            value = password,
+                Spacer(Modifier.height(16.dp))
 
-            onValueChange = {
+                Button(
+                    onClick = {
 
-                password = it
-                error = false
-            },
+                        if (pin == "1234") {
+                            onLogin()
+                        } else {
+                            error = "رمز ورود اشتباه است."
+                        }
 
-            label = {
-                Text("رمز ورود")
-            },
-
-            singleLine = true
-        )
-
-        if (error) {
-
-            Text(
-                text = "رمز صحیح نیست",
-                color = Color.Red,
-                modifier = Modifier.padding(8.dp)
-            )
-        }
-
-        Spacer(
-            modifier = Modifier.height(16.dp)
-        )
-
-        Button(
-            onClick = {
-
-                if (password == "1234") {
-
-                    onLogin()
-
-                } else {
-
-                    error = true
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("ورود با رمز")
                 }
-            }
-        ) {
 
-            Text("ورود")
+                Spacer(Modifier.height(10.dp))
+
+                OutlinedButton(
+                    onClick = {
+                        biometricLogin()
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+
+                    Icon(
+                        Icons.Default.Fingerprint,
+                        contentDescription = null
+                    )
+
+                    Spacer(Modifier.width(8.dp))
+
+                    Text("ورود با اثر انگشت")
+                }
+
+                if (error.isNotEmpty()) {
+
+                    Spacer(Modifier.height(12.dp))
+
+                    Text(
+                        text = error,
+                        color = Color.Red,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
+                Spacer(Modifier.height(20.dp))
+
+                Text(
+                    text = "رمز پیش‌فرض: 1234",
+                    fontSize = 12.sp,
+                    color = Color.Gray
+                )
+            }
         }
     }
 }
 
-
-// =========================
-// آیتم منو
-// =========================
-
-data class MenuItem(
-    val title: String,
-    val icon: ImageVector,
-    val screen: String
-)
-
-
-// =========================
-// صفحه اصلی
-// =========================
-
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
-    onOpen: (String) -> Unit
+    onNavigate: (String) -> Unit,
+    onLogout: () -> Unit
 ) {
 
-    val menu = listOf(
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = {
+                    Text(
+                        "یار کلاس مریم",
+                        fontWeight = FontWeight.Bold
+                    )
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = Burgundy,
+                    titleContentColor = Color.White
+                ),
+                actions = {
 
-        MenuItem(
-            "دانش‌آموزان",
-            Icons.Default.Person,
-            "students"
-        ),
-
-        MenuItem(
-            "حضور و غیاب",
-            Icons.Default.CheckCircle,
-            "attendance"
-        ),
-
-        MenuItem(
-            "ارزشیابی توصیفی",
-            Icons.Default.Star,
-            "evaluation"
-        ),
-
-        MenuItem(
-            "برنامه هفتگی",
-            Icons.Default.CalendarToday,
-            "schedule"
-        ),
-
-        MenuItem(
-            "آزمون‌ساز",
-            Icons.Default.Quiz,
-            "exam"
-        ),
-
-        MenuItem(
-            "تکالیف و یادداشت‌ها",
-            Icons.Default.MenuBook,
-            "homework"
-        ),
-
-        MenuItem(
-            "دفتر کلاسی",
-            Icons.Default.Today,
-            "classbook"
-        ),
-
-        MenuItem(
-            "گزارش‌ها",
-            Icons.Default.Assessment,
-            "reports"
-        ),
-
-        MenuItem(
-            "خط تحریری",
-            Icons.Default.Create,
-            "handwriting"
-        ),
-
-        MenuItem(
-            "پشتیبان‌گیری",
-            Icons.Default.Backup,
-            "backup"
-        )
-    )
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Cream)
-    ) {
-
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(Burgundy)
-                .padding(20.dp)
-        ) {
-
-            Text(
-                text = "یار کلاس مریم",
-                color = Color.White,
-                fontSize = 28.sp,
-                fontWeight = FontWeight.Bold,
-
-                modifier = Modifier.fillMaxWidth(),
-
-                textAlign = TextAlign.Right
+                    IconButton(
+                        onClick = onLogout
+                    ) {
+                        Icon(
+                            Icons.Default.ExitToApp,
+                            contentDescription = "خروج",
+                            tint = Color.White
+                        )
+                    }
+                }
             )
         }
+    ) { padding ->
 
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
+                .padding(padding)
                 .padding(16.dp),
-
-            verticalArrangement =
-                Arrangement.spacedBy(14.dp)
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
 
-            items(menu) { item ->
+            item {
 
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(88.dp)
-                        .clickable {
-                            onOpen(item.screen)
-                        },
+                Text(
+                    text = "پنل مدیریت کلاس",
+                    fontSize = 24.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Burgundy
+                )
 
-                    shape =
-                        RoundedCornerShape(22.dp),
+                Spacer(Modifier.height(4.dp))
 
-                    colors =
-                        CardDefaults.cardColors(
-                            containerColor = Color.White
-                        ),
+                Text(
+                    text = "همه اطلاعات کلاس شما در یک مکان",
+                    color = Color.DarkGray
+                )
+            }
 
-                    elevation =
-                        CardDefaults.cardElevation(3.dp)
+            item {
+                HomeButton(
+                    "دانش‌آموزان",
+                    Icons.Default.Person,
+                    LightPink
+                ) {
+                    onNavigate("students")
+                }
+            }
+
+            item {
+                HomeButton(
+                    "حضور و غیاب",
+                    Icons.Default.CheckCircle,
+                    LightGreen
+                ) {
+                    onNavigate("attendance")
+                }
+            }
+
+            item {
+                HomeButton(
+                    "ارزشیابی",
+                    Icons.Default.Assessment,
+                    LightBlue
+                ) {
+                    onNavigate("evaluation")
+                }
+            }
+
+            item {
+                HomeButton(
+                    "برنامه هفتگی",
+                    Icons.Default.Schedule,
+                    LightYellow
+                ) {
+                    onNavigate("schedule")
+                }
+            }
+
+            item {
+                HomeButton(
+                    "تکلیف‌ساز",
+                    Icons.Default.MenuBook,
+                    LightPink
+                ) {
+                    onNavigate("homework")
+                }
+            }
+
+            item {
+                HomeButton(
+                    "دفتر کلاسی",
+                    Icons.Default.CalendarMonth,
+                    LightGreen
+                ) {
+                    onNavigate("classbook")
+                }
+            }
+
+            item {
+                HomeButton(
+                    "آزمون‌ساز",
+                    Icons.Default.Quiz,
+                    LightBlue
+                ) {
+                    onNavigate("exam")
+                }
+            }
+
+            item {
+                HomeButton(
+                    "گزارش‌ها",
+                    Icons.Default.Assessment,
+                    LightYellow
+                ) {
+                    onNavigate("reports")
+                }
+            }
+
+            item {
+                HomeButton(
+                    "خط تحریری",
+                    Icons.Default.Edit,
+                    LightPink
+                ) {
+                    onNavigate("handwriting")
+                }
+            }
+
+            item {
+                HomeButton(
+                    "پشتیبان‌گیری و بازیابی",
+                    Icons.Default.Backup,
+                    LightGreen
+                ) {
+                    onNavigate("backup")
+                }
+            }
+
+            item {
+
+                Spacer(Modifier.height(8.dp))
+
+                OutlinedButton(
+                    onClick = onLogout,
+                    modifier = Modifier.fillMaxWidth()
                 ) {
 
-                    Row(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(
-                                horizontal = 18.dp
-                            ),
+                    Icon(
+                        Icons.Default.ExitToApp,
+                        contentDescription = null
+                    )
 
-                        verticalAlignment =
-                            Alignment.CenterVertically
-                    ) {
+                    Spacer(Modifier.width(8.dp))
 
-                        Text(
-                            text = item.title,
-
-                            modifier =
-                                Modifier.weight(1f),
-
-                            textAlign =
-                                TextAlign.Right,
-
-                            fontSize = 21.sp,
-
-                            fontWeight =
-                                FontWeight.Bold,
-
-                            color = Burgundy
-                        )
-
-                        Spacer(
-                            modifier =
-                                Modifier.width(18.dp)
-                        )
-
-                        Box(
-                            modifier = Modifier
-                                .size(55.dp)
-                                .clip(
-                                    RoundedCornerShape(17.dp)
-                                )
-                                .background(LightPink),
-
-                            contentAlignment =
-                                Alignment.Center
-                        ) {
-
-                            Icon(
-                                imageVector =
-                                    item.icon,
-
-                                contentDescription =
-                                    item.title,
-
-                                tint = Burgundy,
-
-                                modifier =
-                                    Modifier.size(31.dp)
-                            )
-                        }
-                    }
+                    Text("خروج از حساب")
                 }
             }
         }
     }
 }
 
+@Composable
+fun HomeButton(
+    title: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    background: Color,
+    onClick: () -> Unit
+) {
 
-// =========================
-// Scaffold صفحات
-// =========================
+    Card(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = background
+        )
+    ) {
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(18.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+
+            Icon(
+                icon,
+                contentDescription = null,
+                tint = Burgundy
+            )
+
+            Spacer(Modifier.width(16.dp))
+
+            Text(
+                title,
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Bold,
+                color = DarkBurgundy
+            )
+        }
+    }
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -1000,19 +1125,12 @@ fun PageScaffold(
 ) {
 
     Scaffold(
-
         topBar = {
 
             TopAppBar(
-
                 title = {
-
-                    Text(
-                        text = title,
-                        fontWeight = FontWeight.Bold
-                    )
+                    Text(title)
                 },
-
                 navigationIcon = {
 
                     IconButton(
@@ -1020,35 +1138,30 @@ fun PageScaffold(
                     ) {
 
                         Icon(
-                            imageVector =
-                                Icons.Default.ArrowBack,
-
-                            contentDescription =
-                                "بازگشت"
+                            Icons.Default.Home,
+                            contentDescription = "بازگشت"
                         )
                     }
-                }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = Burgundy,
+                    titleContentColor = Color.White,
+                    navigationIconContentColor = Color.White
+                )
             )
         }
-
     ) { padding ->
 
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Cream)
                 .padding(padding)
+                .padding(16.dp)
         ) {
-
             content()
         }
     }
 }
-
-
-// =========================
-// دانش‌آموزان
-// =========================
 
 @Composable
 fun StudentsScreen(
@@ -1057,13 +1170,19 @@ fun StudentsScreen(
 ) {
 
     var students by remember {
-        mutableStateOf(
-            storage.getStudents()
-        )
+        mutableStateOf(storage.getStudents())
     }
 
-    var showAdd by remember {
+    var showDialog by remember {
         mutableStateOf(false)
+    }
+
+    var name by remember {
+        mutableStateOf("")
+    }
+
+    var code by remember {
+        mutableStateOf("")
     }
 
     PageScaffold(
@@ -1071,235 +1190,188 @@ fun StudentsScreen(
         onBack = onBack
     ) {
 
-        Button(
-            onClick = {
-                showAdd = true
-            },
-
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(12.dp)
-        ) {
-
-            Text("＋ افزودن دانش‌آموز")
-        }
-
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(LightYellow)
-                .border(1.dp, Gold)
-                .padding(10.dp)
-        ) {
-
-            Text(
-                text = "نام و نام خانوادگی",
-
-                modifier =
-                    Modifier.weight(1f),
-
-                fontWeight =
-                    FontWeight.Bold
-            )
-
-            Text(
-                text = "کد",
-
-                modifier =
-                    Modifier.width(75.dp),
-
-                textAlign =
-                    TextAlign.Center,
-
-                fontWeight =
-                    FontWeight.Bold
-            )
-
-            Text(
-                text = "ردیف",
-
-                modifier =
-                    Modifier.width(55.dp),
-
-                textAlign =
-                    TextAlign.Center,
-
-                fontWeight =
-                    FontWeight.Bold
-            )
-        }
-
-        LazyColumn(
+        Column(
             modifier = Modifier.fillMaxSize()
         ) {
 
-            items(students) { student ->
+            Button(
+                onClick = {
+                    name = ""
+                    code = ""
+                    showDialog = true
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
 
-                val number =
-                    students.indexOf(student) + 1
+                Icon(
+                    Icons.Default.PersonAdd,
+                    contentDescription = null
+                )
 
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(Color.White)
-                        .border(
-                            0.5.dp,
-                            Color.LightGray
-                        )
-                        .padding(
-                            vertical = 15.dp,
-                            horizontal = 8.dp
-                        ),
+                Spacer(Modifier.width(8.dp))
 
-                    verticalAlignment =
-                        Alignment.CenterVertically
+                Text("افزودن دانش‌آموز")
+            }
+
+            Spacer(Modifier.height(12.dp))
+
+            if (students.isEmpty()) {
+
+                Text(
+                    "هنوز دانش‌آموزی ثبت نشده است.",
+                    color = Color.Gray
+                )
+
+            } else {
+
+                LazyColumn(
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
 
-                    Text(
-                        text = student.name,
+                    items(
+                        students,
+                        key = { it.id }
+                    ) { student ->
 
-                        modifier =
-                            Modifier.weight(1f),
+                        Card(
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
 
-                        fontSize = 17.sp
-                    )
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(16.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
 
-                    Text(
-                        text = student.code,
+                                Icon(
+                                    Icons.Default.Person,
+                                    contentDescription = null,
+                                    tint = Burgundy
+                                )
 
-                        modifier =
-                            Modifier.width(75.dp),
+                                Spacer(Modifier.width(12.dp))
 
-                        textAlign =
-                            TextAlign.Center
-                    )
+                                Column(
+                                    modifier = Modifier.weight(1f)
+                                ) {
 
-                    Text(
-                        text = number.toString(),
+                                    Text(
+                                        student.name,
+                                        fontWeight = FontWeight.Bold
+                                    )
 
-                        modifier =
-                            Modifier.width(55.dp),
+                                    Text(
+                                        "کد: ${student.code}",
+                                        fontSize = 13.sp,
+                                        color = Color.Gray
+                                    )
+                                }
 
-                        textAlign =
-                            TextAlign.Center
-                    )
+                                IconButton(
+                                    onClick = {
+
+                                        val updated =
+                                            students.filter {
+                                                it.id != student.id
+                                            }
+
+                                        storage.saveStudents(updated)
+                                        students = updated
+                                    }
+                                ) {
+
+                                    Icon(
+                                        Icons.Default.Delete,
+                                        contentDescription = "حذف",
+                                        tint = Color.Red
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
     }
 
-    if (showAdd) {
-
-        var name by remember {
-            mutableStateOf("")
-        }
-
-        var code by remember {
-            mutableStateOf("")
-        }
+    if (showDialog) {
 
         AlertDialog(
-
             onDismissRequest = {
-                showAdd = false
+                showDialog = false
             },
-
             title = {
                 Text("افزودن دانش‌آموز")
             },
-
             text = {
 
                 Column {
 
                     OutlinedTextField(
                         value = name,
-
                         onValueChange = {
                             name = it
                         },
-
+                        modifier = Modifier.fillMaxWidth(),
                         label = {
-                            Text(
-                                "نام و نام خانوادگی"
-                            )
+                            Text("نام و نام خانوادگی")
                         }
                     )
 
-                    Spacer(
-                        modifier =
-                            Modifier.height(10.dp)
-                    )
+                    Spacer(Modifier.height(10.dp))
 
                     OutlinedTextField(
                         value = code,
-
                         onValueChange = {
                             code = it
                         },
-
+                        modifier = Modifier.fillMaxWidth(),
                         label = {
-                            Text("کد دانش‌آموز")
+                            Text("کد دانش‌آموزی")
                         }
                     )
                 }
             },
-
             confirmButton = {
 
                 TextButton(
-
                     onClick = {
 
-                        if (name.isNotBlank()) {
+                        if (name.trim().isNotEmpty()) {
 
-                            students =
-                                (
-                                    students +
-                                            Student(
-                                                id =
-                                                    Random.nextLong(),
-
-                                                name =
-                                                    name,
-
-                                                code =
-                                                    code
-                                            )
-                                ).toMutableList()
-
-                            storage.saveStudents(
-                                students
+                            val student = Student(
+                                id = System.currentTimeMillis(),
+                                name = name.trim(),
+                                code = code.trim()
                             )
 
-                            showAdd = false
+                            val updated =
+                                students + student
+
+                            storage.saveStudents(updated)
+                            students = updated
+
+                            showDialog = false
                         }
                     }
                 ) {
-
                     Text("ذخیره")
                 }
             },
-
             dismissButton = {
 
                 TextButton(
                     onClick = {
-                        showAdd = false
+                        showDialog = false
                     }
                 ) {
-
                     Text("انصراف")
                 }
             }
         )
     }
 }
-
-
-// =========================
-// حضور و غیاب
-// =========================
 
 @Composable
 fun AttendanceScreen(
@@ -1308,238 +1380,159 @@ fun AttendanceScreen(
 ) {
 
     var students by remember {
-        mutableStateOf(
-            storage.getStudents()
-        )
+        mutableStateOf(storage.getStudents())
     }
 
-    var records by remember {
-        mutableStateOf(
-            storage.getAttendance()
-        )
+    var attendance by remember {
+        mutableStateOf(storage.getAttendance())
     }
 
-    val date =
-        SimpleDateFormat(
-            "yyyy/MM/dd",
-            Locale.getDefault()
-        ).format(Date())
+    val date = SimpleDateFormat(
+        "yyyy/MM/dd",
+        Locale.getDefault()
+    ).format(Date())
 
     PageScaffold(
         title = "حضور و غیاب",
         onBack = onBack
     ) {
 
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(LightYellow)
-                .border(1.dp, Gold)
-                .padding(8.dp),
-
-            verticalAlignment =
-                Alignment.CenterVertically
-        ) {
+        if (students.isEmpty()) {
 
             Text(
-                text = "نام و نام خانوادگی",
-
-                modifier =
-                    Modifier.weight(1f),
-
-                fontWeight =
-                    FontWeight.Bold
+                "ابتدا از بخش دانش‌آموزان، دانش‌آموز اضافه کنید."
             )
 
-            Text(
-                text = "حاضر",
-
-                modifier =
-                    Modifier.width(65.dp),
-
-                textAlign =
-                    TextAlign.Center,
-
-                fontWeight =
-                    FontWeight.Bold
-            )
-
-            Text(
-                text = "غایب",
-
-                modifier =
-                    Modifier.width(65.dp),
-
-                textAlign =
-                    TextAlign.Center,
-
-                fontWeight =
-                    FontWeight.Bold
-            )
-
-            Text(
-                text = "تأخیر",
-
-                modifier =
-                    Modifier.width(65.dp),
-
-                textAlign =
-                    TextAlign.Center,
-
-                fontWeight =
-                    FontWeight.Bold
-            )
+            return@PageScaffold
         }
 
-        LazyColumn {
+        LazyColumn(
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
 
-            items(students) { student ->
+            item {
+
+                Text(
+                    "تاریخ: $date",
+                    fontWeight = FontWeight.Bold,
+                    color = Burgundy
+                )
+
+                Spacer(Modifier.height(12.dp))
+            }
+
+            items(
+                students,
+                key = { it.id }
+            ) { student ->
 
                 val current =
-                    records.firstOrNull {
+                    attendance.lastOrNull {
+                        it.studentId == student.id &&
+                                it.date == date
+                    }
 
-                        it.studentId ==
-                                student.id &&
-
-                                it.date ==
-                                date
-
-                    }?.status ?: ""
-
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(Color.White)
-                        .border(
-                            0.5.dp,
-                            Color.LightGray
-                        )
-                        .padding(7.dp),
-
-                    verticalAlignment =
-                        Alignment.CenterVertically
+                Card(
+                    modifier = Modifier.fillMaxWidth()
                 ) {
 
-                    Text(
-                        text = student.name,
+                    Column(
+                        modifier = Modifier.padding(12.dp)
+                    ) {
 
-                        modifier =
-                            Modifier.weight(1f),
+                        Text(
+                            student.name,
+                            fontWeight = FontWeight.Bold
+                        )
 
-                        fontSize = 16.sp
-                    )
+                        Spacer(Modifier.height(8.dp))
 
-                    AttendanceButton(
-                        text = "✓",
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
 
-                        selected =
-                            current == "حاضر",
+                            AttendanceButton(
+                                "حاضر",
+                                current?.status == "حاضر"
+                            ) {
 
-                        onClick = {
+                                val filtered =
+                                    attendance.filterNot {
+                                        it.studentId == student.id &&
+                                                it.date == date
+                                    }
 
-                            records.removeAll {
+                                val updated =
+                                    filtered + Attendance(
+                                        student.id,
+                                        date,
+                                        "حاضر"
+                                    )
 
-                                it.studentId ==
-                                        student.id &&
-
-                                        it.date ==
-                                        date
+                                storage.saveAttendance(updated)
+                                attendance = updated
                             }
 
-                            records.add(
-                                Attendance(
-                                    student.id,
-                                    date,
-                                    "حاضر"
-                                )
-                            )
+                            AttendanceButton(
+                                "غایب",
+                                current?.status == "غایب"
+                            ) {
 
-                            storage.saveAttendance(
-                                records
-                            )
+                                val filtered =
+                                    attendance.filterNot {
+                                        it.studentId == student.id &&
+                                                it.date == date
+                                    }
 
-                            records =
-                                storage.getAttendance()
-                        }
-                    )
+                                val updated =
+                                    filtered + Attendance(
+                                        student.id,
+                                        date,
+                                        "غایب"
+                                    )
 
-                    AttendanceButton(
-                        text = "×",
-
-                        selected =
-                            current == "غایب",
-
-                        onClick = {
-
-                            records.removeAll {
-
-                                it.studentId ==
-                                        student.id &&
-
-                                        it.date ==
-                                        date
+                                storage.saveAttendance(updated)
+                                attendance = updated
                             }
 
-                            records.add(
-                                Attendance(
-                                    student.id,
-                                    date,
-                                    "غایب"
-                                )
-                            )
+                            AttendanceButton(
+                                "تاخیر",
+                                current?.status == "تاخیر"
+                            ) {
 
-                            storage.saveAttendance(
-                                records
-                            )
+                                val filtered =
+                                    attendance.filterNot {
+                                        it.studentId == student.id &&
+                                                it.date == date
+                                    }
 
-                            records =
-                                storage.getAttendance()
-                        }
-                    )
+                                val updated =
+                                    filtered + Attendance(
+                                        student.id,
+                                        date,
+                                        "تاخیر"
+                                    )
 
-                    AttendanceButton(
-                        text = "⏰",
-
-                        selected =
-                            current == "تأخیر",
-
-                        onClick = {
-
-                            records.removeAll {
-
-                                it.studentId ==
-                                        student.id &&
-
-                                        it.date ==
-                                        date
+                                storage.saveAttendance(updated)
+                                attendance = updated
                             }
-
-                            records.add(
-                                Attendance(
-                                    student.id,
-                                    date,
-                                    "تأخیر"
-                                )
-                            )
-
-                            storage.saveAttendance(
-                                records
-                            )
-
-                            records =
-                                storage.getAttendance()
                         }
-                    )
+
+                        if (current != null) {
+
+                            Text(
+                                "وضعیت: ${current.status}",
+                                color = Burgundy,
+                                fontSize = 13.sp
+                            )
+                        }
+                    }
                 }
             }
         }
     }
 }
-
-
-// =========================
-// دکمه حضور و غیاب
-// =========================
 
 @Composable
 fun AttendanceButton(
@@ -1548,37 +1541,25 @@ fun AttendanceButton(
     onClick: () -> Unit
 ) {
 
-    OutlinedButton(
+    if (selected) {
 
-        onClick = onClick,
+        Button(
+            onClick = onClick,
+            modifier = Modifier
+        ) {
+            Text(text)
+        }
 
-        modifier = Modifier
-            .width(65.dp)
-            .padding(2.dp)
-    ) {
+    } else {
 
-        Text(
-            text = text,
-
-            color =
-                if (selected)
-                    Burgundy
-                else
-                    Color.DarkGray,
-
-            fontWeight =
-                if (selected)
-                    FontWeight.Bold
-                else
-                    FontWeight.Normal
-        )
+        OutlinedButton(
+            onClick = onClick,
+            modifier = Modifier
+        ) {
+            Text(text)
+        }
     }
 }
-
-
-// =========================
-// ارزشیابی
-// =========================
 
 @Composable
 fun EvaluationScreen(
@@ -1586,12 +1567,20 @@ fun EvaluationScreen(
     onBack: () -> Unit
 ) {
 
-    val students = remember {
-        storage.getStudents()
+    var students by remember {
+        mutableStateOf(storage.getStudents())
     }
 
-    var selected by remember {
+    var evaluations by remember {
+        mutableStateOf(storage.getEvaluations())
+    }
+
+    var selectedStudent by remember {
         mutableStateOf<Student?>(null)
+    }
+
+    var menuOpen by remember {
+        mutableStateOf(false)
     }
 
     var lesson by remember {
@@ -1599,7 +1588,7 @@ fun EvaluationScreen(
     }
 
     var level by remember {
-        mutableStateOf("خوب")
+        mutableStateOf("خیلی خوب")
     }
 
     var note by remember {
@@ -1607,174 +1596,200 @@ fun EvaluationScreen(
     }
 
     PageScaffold(
-        title = "ارزشیابی توصیفی",
+        title = "ارزشیابی",
         onBack = onBack
     ) {
 
         LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(16.dp)
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
 
             item {
 
-                Text(
-                    text =
-                        "دانش‌آموز را انتخاب کنید",
-
-                    fontWeight =
-                        FontWeight.Bold,
-
-                    color = Burgundy
-                )
-
-                Spacer(
-                    modifier =
-                        Modifier.height(8.dp)
-                )
-
-                students.forEach {
+                Box {
 
                     OutlinedButton(
-
                         onClick = {
-                            selected = it
+                            menuOpen = true
                         },
-
-                        modifier =
-                            Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth()
                     ) {
 
-                        Text(it.name)
+                        Text(
+                            selectedStudent?.name
+                                ?: "انتخاب دانش‌آموز"
+                        )
+                    }
+
+                    DropdownMenu(
+                        expanded = menuOpen,
+                        onDismissRequest = {
+                            menuOpen = false
+                        }
+                    ) {
+
+                        students.forEach { student ->
+
+                            DropdownMenuItem(
+                                text = {
+                                    Text(student.name)
+                                },
+                                onClick = {
+
+                                    selectedStudent = student
+                                    menuOpen = false
+                                }
+                            )
+                        }
                     }
                 }
+            }
 
-                Spacer(
-                    modifier =
-                        Modifier.height(10.dp)
-                )
+            item {
 
                 OutlinedTextField(
-
                     value = lesson,
-
                     onValueChange = {
                         lesson = it
                     },
-
+                    modifier = Modifier.fillMaxWidth(),
                     label = {
-                        Text("نام درس")
-                    },
-
-                    modifier =
-                        Modifier.fillMaxWidth()
+                        Text("درس")
+                    }
                 )
+            }
 
-                Spacer(
-                    modifier =
-                        Modifier.height(10.dp)
-                )
+            item {
 
                 Text(
-                    text = "سطح ارزشیابی",
+                    "سطح ارزشیابی",
                     fontWeight = FontWeight.Bold
                 )
 
                 Row(
-                    modifier =
-                        Modifier.fillMaxWidth(),
-
-                    horizontalArrangement =
-                        Arrangement.SpaceEvenly
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
 
                     listOf(
                         "عالی",
+                        "خیلی خوب",
                         "خوب",
-                        "قابل قبول",
                         "نیازمند تلاش"
-                    ).forEach {
+                    ).forEach { item ->
 
-                        OutlinedButton(
-                            onClick = {
-                                level = it
+                        if (level == item) {
+
+                            Button(
+                                onClick = {
+                                    level = item
+                                }
+                            ) {
+                                Text(item)
                             }
-                        ) {
 
-                            Text(it)
+                        } else {
+
+                            OutlinedButton(
+                                onClick = {
+                                    level = item
+                                }
+                            ) {
+                                Text(item)
+                            }
                         }
                     }
                 }
+            }
 
-                Spacer(
-                    modifier =
-                        Modifier.height(8.dp)
-                )
+            item {
 
                 OutlinedTextField(
-
                     value = note,
-
                     onValueChange = {
                         note = it
                     },
-
+                    modifier = Modifier.fillMaxWidth(),
                     label = {
                         Text("توضیحات")
                     },
-
-                    modifier =
-                        Modifier.fillMaxWidth()
+                    minLines = 3
                 )
+            }
 
-                Spacer(
-                    modifier =
-                        Modifier.height(12.dp)
-                )
+            item {
 
                 Button(
-
                     onClick = {
 
-                        selected?.let { student ->
+                        if (
+                            selectedStudent != null &&
+                            lesson.isNotBlank()
+                        ) {
 
-                            val list =
-                                storage.getEvaluations()
-
-                            list.add(
-                                Evaluation(
-                                    student.id,
+                            val updated =
+                                evaluations + Evaluation(
+                                    selectedStudent!!.id,
                                     lesson,
                                     level,
                                     note
                                 )
-                            )
 
-                            storage.saveEvaluations(
-                                list
-                            )
+                            storage.saveEvaluations(updated)
+                            evaluations = updated
 
                             lesson = ""
                             note = ""
                         }
                     },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("ذخیره ارزشیابی")
+                }
+            }
 
-                    modifier =
-                        Modifier.fillMaxWidth()
+            item {
+
+                Divider()
+
+                Text(
+                    "ارزشیابی‌های ثبت شده",
+                    fontWeight = FontWeight.Bold,
+                    color = Burgundy
+                )
+            }
+
+            items(evaluations) { item ->
+
+                val student =
+                    students.firstOrNull {
+                        it.id == item.studentId
+                    }
+
+                Card(
+                    modifier = Modifier.fillMaxWidth()
                 ) {
 
-                    Text("ذخیره ارزشیابی")
+                    Column(
+                        modifier = Modifier.padding(12.dp)
+                    ) {
+
+                        Text(
+                            student?.name ?: "دانش‌آموز حذف شده",
+                            fontWeight = FontWeight.Bold
+                        )
+
+                        Text("درس: ${item.lesson}")
+                        Text("سطح: ${item.level}")
+
+                        if (item.note.isNotBlank()) {
+                            Text("توضیح: ${item.note}")
+                        }
+                    }
                 }
             }
         }
     }
 }
-
-
-// =========================
-// برنامه هفتگی
-// =========================
 
 @Composable
 fun ScheduleScreen(
@@ -1783,38 +1798,20 @@ fun ScheduleScreen(
 ) {
 
     var schedule by remember {
-        mutableStateOf(
-            storage.getSchedule()
-        )
+        mutableStateOf(storage.getSchedule())
     }
 
-    var selectedDay by remember {
+    var day by remember {
         mutableStateOf("شنبه")
     }
 
-    var selectedPeriod by remember {
-        mutableStateOf(1)
+    var period by remember {
+        mutableStateOf("1")
     }
 
-    var lessonText by remember {
+    var lesson by remember {
         mutableStateOf("")
     }
-
-    val days = listOf(
-        "شنبه",
-        "یکشنبه",
-        "دوشنبه",
-        "سه‌شنبه",
-        "چهارشنبه"
-    )
-
-    val lessons = listOf(
-        "زنگ اول",
-        "زنگ دوم",
-        "زنگ سوم",
-        "زنگ چهارم",
-        "زنگ پنجم"
-    )
 
     PageScaffold(
         title = "برنامه هفتگی",
@@ -1822,265 +1819,98 @@ fun ScheduleScreen(
     ) {
 
         Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(10.dp)
+            modifier = Modifier.fillMaxSize()
         ) {
 
-            Text(
-                text = "برنامه کلاس",
-
-                modifier =
-                    Modifier.fillMaxWidth(),
-
-                textAlign =
-                    TextAlign.Center,
-
-                fontSize = 23.sp,
-
-                fontWeight =
-                    FontWeight.Bold,
-
-                color = Burgundy
-            )
-
-            Spacer(
-                modifier =
-                    Modifier.height(8.dp)
-            )
-
-            Text(
-                text = "روز را انتخاب کنید:",
-                fontWeight =
-                    FontWeight.Bold
-            )
-
-            Row(
-                modifier =
-                    Modifier.fillMaxWidth(),
-
-                horizontalArrangement =
-                    Arrangement.SpaceEvenly
-            ) {
-
-                days.forEach { day ->
-
-                    OutlinedButton(
-                        onClick = {
-                            selectedDay = day
-                        }
-                    ) {
-
-                        Text(day)
-                    }
+            OutlinedTextField(
+                value = day,
+                onValueChange = {
+                    day = it
+                },
+                modifier = Modifier.fillMaxWidth(),
+                label = {
+                    Text("روز")
                 }
-            }
-
-            Spacer(
-                modifier =
-                    Modifier.height(8.dp)
             )
 
-            Text(
-                text = "زنگ را انتخاب کنید:",
-                fontWeight =
-                    FontWeight.Bold
-            )
-
-            Row(
-                modifier =
-                    Modifier.fillMaxWidth(),
-
-                horizontalArrangement =
-                    Arrangement.SpaceEvenly
-            ) {
-
-                (1..5).forEach { p ->
-
-                    OutlinedButton(
-
-                        onClick = {
-                            selectedPeriod = p
-                        }
-                    ) {
-
-                        Text(p.toString())
-                    }
-                }
-            }
+            Spacer(Modifier.height(8.dp))
 
             OutlinedTextField(
-
-                value = lessonText,
-
+                value = period,
                 onValueChange = {
-                    lessonText = it
+                    period = it
                 },
-
+                modifier = Modifier.fillMaxWidth(),
                 label = {
-
-                    Text(
-                        "${lessons[selectedPeriod - 1]} - $selectedDay"
-                    )
+                    Text("زنگ")
                 },
-
-                modifier =
-                    Modifier.fillMaxWidth()
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Number
+                )
             )
+
+            Spacer(Modifier.height(8.dp))
+
+            OutlinedTextField(
+                value = lesson,
+                onValueChange = {
+                    lesson = it
+                },
+                modifier = Modifier.fillMaxWidth(),
+                label = {
+                    Text("درس")
+                }
+            )
+
+            Spacer(Modifier.height(10.dp))
 
             Button(
-
                 onClick = {
 
-                    if (lessonText.isNotBlank()) {
+                    if (lesson.isNotBlank()) {
 
-                        schedule.removeAll {
-
-                            it.day ==
-                                    selectedDay &&
-
-                                    it.period ==
-                                    selectedPeriod
-                        }
-
-                        schedule.add(
-
-                            ScheduleItem(
-                                selectedDay,
-                                selectedPeriod,
-                                lessonText
+                        val updated =
+                            schedule + ScheduleItem(
+                                day,
+                                period.toIntOrNull() ?: 1,
+                                lesson
                             )
-                        )
 
-                        storage.saveSchedule(
-                            schedule
-                        )
+                        storage.saveSchedule(updated)
+                        schedule = updated
 
-                        schedule =
-                            storage.getSchedule()
-
-                        lessonText = ""
+                        lesson = ""
                     }
                 },
-
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 8.dp)
+                modifier = Modifier.fillMaxWidth()
             ) {
-
-                Text("ثبت در برنامه")
+                Text("ذخیره برنامه")
             }
 
-            Spacer(
-                modifier =
-                    Modifier.height(8.dp)
-            )
+            Spacer(Modifier.height(12.dp))
 
-            Text(
-                text = "برنامه کلاس",
-
-                fontWeight =
-                    FontWeight.Bold,
-
-                fontSize = 20.sp,
-
-                color = Burgundy
-            )
-
-            Spacer(
-                modifier =
-                    Modifier.height(5.dp)
-            )
-
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(LightYellow)
-                    .border(1.dp, Gold)
+            LazyColumn(
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
 
-                Text(
-                    "روز",
+                items(schedule) { item ->
 
-                    modifier = Modifier
-                        .weight(1f)
-                        .padding(8.dp),
-
-                    fontWeight =
-                        FontWeight.Bold,
-
-                    textAlign =
-                        TextAlign.Center
-                )
-
-                (1..5).forEach { period ->
-
-                    Text(
-                        "زنگ $period",
-
-                        modifier = Modifier
-                            .weight(1f)
-                            .padding(8.dp),
-
-                        fontWeight =
-                            FontWeight.Bold,
-
-                        textAlign =
-                            TextAlign.Center
-                    )
-                }
-            }
-
-            LazyColumn {
-
-                items(days) { day ->
-
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(60.dp)
-                            .background(Color.White)
-                            .border(
-                                0.5.dp,
-                                Color.Gray
-                            )
+                    Card(
+                        modifier = Modifier.fillMaxWidth()
                     ) {
 
-                        Text(
-                            text = day,
-
-                            modifier = Modifier
-                                .weight(1f)
-                                .padding(5.dp),
-
-                            textAlign =
-                                TextAlign.Center,
-
-                            fontWeight =
-                                FontWeight.Bold
-                        )
-
-                        (1..5).forEach { period ->
+                        Row(
+                            modifier = Modifier.padding(14.dp)
+                        ) {
 
                             Text(
-
-                                text =
-                                    schedule.firstOrNull {
-
-                                        it.day == day &&
-                                                it.period == period
-
-                                    }?.lesson ?: "",
-
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .padding(5.dp),
-
-                                textAlign =
-                                    TextAlign.Center,
-
-                                fontSize = 12.sp
+                                "${item.day} - زنگ ${item.period}",
+                                fontWeight = FontWeight.Bold
                             )
+
+                            Spacer(Modifier.width(12.dp))
+
+                            Text(item.lesson)
                         }
                     }
                 }
@@ -2089,10 +1919,58 @@ fun ScheduleScreen(
     }
 }
 
+fun createSmartHomework(
+    lesson: String,
+    level: String,
+    count: Int
+): String {
 
-// =========================
-// تکلیف‌ساز
-// =========================
+    val result = StringBuilder()
+
+    val normalized =
+        lesson.trim().lowercase(Locale.getDefault())
+
+    for (i in 1..count.coerceIn(1, 20)) {
+
+        val question = when {
+
+            normalized.contains("ریاضی") -> {
+
+                when (level) {
+
+                    "آسان" ->
+                        "$i. یک سؤال ساده از مباحث درس ریاضی حل کنید و روش حل را بنویسید."
+
+                    "متوسط" ->
+                        "$i. یک مسئله ریاضی مرتبط با درس حل کنید و مراحل حل را کامل بنویسید."
+
+                    else ->
+                        "$i. یک مسئله چالشی ریاضی طراحی کنید و پاسخ تشریحی آن را بنویسید."
+                }
+            }
+
+            normalized.contains("فارسی") -> {
+
+                "$i. یک فعالیت مرتبط با درس فارسی انجام دهید و پاسخ خود را کامل بنویسید."
+            }
+
+            normalized.contains("علوم") -> {
+
+                "$i. یک سؤال مفهومی از درس علوم بنویسید و پاسخ دهید."
+            }
+
+            else -> {
+
+                "$i. سه نکته مهم از درس $lesson بنویسید."
+            }
+        }
+
+        result.append(question)
+        result.append("\n\n")
+    }
+
+    return result.toString()
+}
 
 @Composable
 fun HomeworkScreen(
@@ -2100,826 +1978,226 @@ fun HomeworkScreen(
     onBack: () -> Unit
 ) {
 
+    val context = LocalContext.current
+
+    var homework by remember {
+        mutableStateOf(storage.getHomework())
+    }
+
     var lesson by remember {
         mutableStateOf("")
     }
 
-    var topic by remember {
-        mutableStateOf("")
-    }
-
     var level by remember {
-        mutableStateOf("ساده")
+        mutableStateOf("متوسط")
     }
 
     var count by remember {
         mutableStateOf("5")
     }
 
-    var homework by remember {
-        mutableStateOf<Homework?>(null)
+    var generated by remember {
+        mutableStateOf("")
     }
 
     PageScaffold(
-        title = "تکلیف‌ساز هوشمند",
+        title = "تکلیف‌ساز",
         onBack = onBack
     ) {
 
         LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(16.dp)
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
 
             item {
 
-                Text(
-                    text = "🤖 ساخت تکلیف هوشمند",
-
-                    fontSize = 25.sp,
-
-                    fontWeight =
-                        FontWeight.Bold,
-
-                    color = Burgundy
-                )
-
-                Spacer(
-                    modifier =
-                        Modifier.height(8.dp)
-                )
-
-                Text(
-                    "درس و موضوع را وارد کنید تا یک تکلیف متناسب با سطح دانش‌آموزان ساخته شود."
-                )
-
-                Spacer(
-                    modifier =
-                        Modifier.height(15.dp)
-                )
-
                 OutlinedTextField(
-
                     value = lesson,
-
                     onValueChange = {
                         lesson = it
                     },
-
+                    modifier = Modifier.fillMaxWidth(),
                     label = {
-                        Text("درس")
-                    },
-
-                    modifier =
-                        Modifier.fillMaxWidth()
+                        Text("درس / موضوع")
+                    }
                 )
+            }
 
-                Spacer(
-                    modifier =
-                        Modifier.height(10.dp)
-                )
+            item {
 
                 OutlinedTextField(
-
-                    value = topic,
-
+                    value = level,
                     onValueChange = {
-                        topic = it
+                        level = it
                     },
-
+                    modifier = Modifier.fillMaxWidth(),
                     label = {
-                        Text("موضوع درس")
-                    },
-
-                    modifier =
-                        Modifier.fillMaxWidth()
-                )
-
-                Spacer(
-                    modifier =
-                        Modifier.height(10.dp)
-                )
-
-                Text(
-                    text = "سطح تکلیف",
-
-                    fontWeight =
-                        FontWeight.Bold,
-
-                    color = Burgundy
-                )
-
-                Row(
-                    modifier =
-                        Modifier.fillMaxWidth(),
-
-                    horizontalArrangement =
-                        Arrangement.SpaceEvenly
-                ) {
-
-                    OutlinedButton(
-                        onClick = {
-                            level = "ساده"
-                        }
-                    ) {
-
-                        Text("🟢 ساده")
+                        Text("سطح")
                     }
+                )
+            }
 
-                    OutlinedButton(
-                        onClick = {
-                            level = "متوسط"
-                        }
-                    ) {
-
-                        Text("🟡 متوسط")
-                    }
-                }
+            item {
 
                 OutlinedTextField(
-
                     value = count,
-
                     onValueChange = {
                         count = it
                     },
-
+                    modifier = Modifier.fillMaxWidth(),
                     label = {
                         Text("تعداد فعالیت")
-                    },
-
-                    modifier =
-                        Modifier.fillMaxWidth()
+                    }
                 )
+            }
 
-                Spacer(
-                    modifier =
-                        Modifier.height(15.dp)
-                )
+            item {
 
                 Button(
-
                     onClick = {
 
-                        homework =
-                            createSmartHomework(
+                        if (lesson.isNotBlank()) {
 
-                                lesson =
-                                    lesson.ifBlank {
-                                        "درس"
-                                    },
-
-                                topic =
-                                    topic.ifBlank {
-                                        "موضوع امروز"
-                                    },
-
-                                level = level,
-
-                                count =
-                                    count.toIntOrNull()
-                                        ?: 5
-                            )
+                            generated =
+                                createSmartHomework(
+                                    lesson,
+                                    level,
+                                    count.toIntOrNull() ?: 5
+                                )
+                        }
                     },
-
-                    modifier =
-                        Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-
-                    Text("✨ تولید تکلیف")
+                    Text("ساخت تکلیف")
                 }
+            }
 
-                Spacer(
-                    modifier =
-                        Modifier.height(20.dp)
-                )
+            if (generated.isNotBlank()) {
 
-                homework?.let { hw ->
+                item {
 
-                    HomeworkPoster(hw)
+                    Card(
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
 
-                    Spacer(
-                        modifier =
-                            Modifier.height(15.dp)
-                    )
+                        Column(
+                            modifier = Modifier.padding(16.dp)
+                        ) {
 
-                    Button(
-
-                        onClick = {
-
-                            val list =
-                                storage.getHomework()
-
-                            list.add(hw)
-
-                            storage.saveHomework(
-                                list
+                            Text(
+                                generated,
+                                fontSize = 16.sp
                             )
-                        },
 
-                        modifier =
-                            Modifier.fillMaxWidth()
-                    ) {
+                            Spacer(Modifier.height(12.dp))
 
-                        Text("💾 ذخیره تکلیف")
+                            Row {
+
+                                Button(
+                                    onClick = {
+
+                                        val item =
+                                            Homework(
+                                                title = "تکلیف $lesson",
+                                                lesson = lesson,
+                                                level = level,
+                                                text = generated
+                                            )
+
+                                        val updated =
+                                            homework + item
+
+                                        storage.saveHomework(updated)
+                                        homework = updated
+                                    }
+                                ) {
+
+                                    Icon(
+                                        Icons.Default.Add,
+                                        contentDescription = null
+                                    )
+
+                                    Spacer(Modifier.width(5.dp))
+
+                                    Text("ذخیره")
+                                }
+
+                                Spacer(Modifier.width(8.dp))
+
+                                OutlinedButton(
+                                    onClick = {
+
+                                        shareText(
+                                            context,
+                                            "تکلیف درس $lesson\n\n$generated"
+                                        )
+                                    }
+                                ) {
+
+                                    Icon(
+                                        Icons.Default.Share,
+                                        contentDescription = null
+                                    )
+
+                                    Spacer(Modifier.width(5.dp))
+
+                                    Text("اشتراک")
+                                }
+                            }
+                        }
                     }
-
-                    Spacer(
-                        modifier =
-                            Modifier.height(8.dp)
-                    )
-
-                    Button(
-
-                        onClick = {
-                            shareHomework(hw)
-                        },
-
-                        modifier =
-                            Modifier.fillMaxWidth()
-                    ) {
-
-                        Text(
-                            "📤 اشتراک‌گذاری متن تکلیف"
-                        )
-                    }
                 }
             }
-        }
-    }
-}
-
-
-// =========================
-// ساخت تکلیف هوشمند
-// =========================
-
-fun createSmartHomework(
-    lesson: String,
-    topic: String,
-    level: String,
-    count: Int
-): Homework {
-
-    val safeCount =
-        count.coerceIn(3, 10)
-
-    val text =
-
-        if (lesson.contains("ریاضی")) {
-
-            if (level == "ساده") {
-
-                buildString {
-
-                    append(
-                        "۱. سه تمرین ساده از مبحث «$topic» حل کن.\n\n"
-                    )
-
-                    append(
-                        "۲. یک مثال از کتاب پیدا کن و با خط زیبا بنویس.\n\n"
-                    )
-
-                    append(
-                        "۳. دو تمرین مشابه برای خودت بساز.\n\n"
-                    )
-
-                    append(
-                        "۴. جواب‌ها را با دقت بررسی کن.\n\n"
-                    )
-
-                    append(
-                        "۵. در پایان بنویس کدام قسمت برایت آسان‌تر بود."
-                    )
-                }
-
-            } else {
-
-                buildString {
-
-                    append(
-                        "۱. $safeCount تمرین از مبحث «$topic» حل کن.\n\n"
-                    )
-
-                    append(
-                        "۲. برای دو تمرین، روش حل را مرحله‌به‌مرحله توضیح بده.\n\n"
-                    )
-
-                    append(
-                        "۳. یک سؤال چالشی از همین مبحث طراحی کن.\n\n"
-                    )
-
-                    append(
-                        "۴. پاسخ سؤال خودت را نیز بنویس.\n\n"
-                    )
-
-                    append(
-                        "۵. یک نکته مهمی که امروز یاد گرفتی بنویس."
-                    )
-                }
-            }
-
-        } else if (lesson.contains("فارسی")) {
-
-            if (level == "ساده") {
-
-                """
-                ۱. پنج کلمه از موضوع «$topic» پیدا کن.
-
-                ۲. با سه کلمه جمله بساز.
-
-                ۳. یک جمله زیبا درباره درس امروز بنویس.
-
-                ۴. کلمات جدید را یک بار با خط زیبا بنویس.
-
-                ۵. یک نقاشی کوچک مرتبط با موضوع بکش.
-                """.trimIndent()
-
-            } else {
-
-                """
-                ۱. هفت واژه مرتبط با «$topic» پیدا کن.
-
-                ۲. با چهار واژه جمله کامل بساز.
-
-                ۳. یک پاراگراف کوتاه درباره موضوع بنویس.
-
-                ۴. دو واژه هم‌معنی یا متضاد پیدا کن.
-
-                ۵. یک سؤال خلاقانه درباره درس طراحی کن.
-                """.trimIndent()
-            }
-
-        } else {
-
-            if (level == "ساده") {
-
-                """
-                ۱. درس «$lesson» و موضوع «$topic» را مرور کن.
-
-                ۲. سه نکته مهم درس را بنویس.
-
-                ۳. دو سؤال ساده از درس طرح کن و جواب بده.
-
-                ۴. یک نقاشی یا مثال مرتبط با موضوع آماده کن.
-
-                ۵. در پایان بنویس امروز چه چیزی یاد گرفتی.
-                """.trimIndent()
-
-            } else {
-
-                """
-                ۱. موضوع «$topic» را با دقت مطالعه کن.
-
-                ۲. پنج نکته مهم درس «$lesson» را بنویس.
-
-                ۳. سه سؤال از موضوع طراحی کن و پاسخ بده.
-
-                ۴. یک مثال واقعی از زندگی روزمره برای موضوع پیدا کن.
-
-                ۵. یک فعالیت خلاقانه درباره درس انجام بده.
-                """.trimIndent()
-            }
-        }
-
-    return Homework(
-        title = "تکلیف امروز",
-        lesson = lesson,
-        level = level,
-        text = text
-    )
-}
-
-
-// =========================
-// پوستر تکلیف
-// =========================
-
-@Composable
-fun HomeworkPoster(
-    homework: Homework
-) {
-
-    Card(
-
-        modifier =
-            Modifier.fillMaxWidth(),
-
-        shape =
-            RoundedCornerShape(25.dp),
-
-        colors =
-            CardDefaults.cardColors(
-                containerColor = LightPink
-            )
-    ) {
-
-        Column(
-
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(22.dp)
-        ) {
-
-            Text(
-
-                text =
-                    "🌸 ${homework.title}",
-
-                modifier =
-                    Modifier.fillMaxWidth(),
-
-                textAlign =
-                    TextAlign.Center,
-
-                fontSize = 27.sp,
-
-                fontWeight =
-                    FontWeight.Bold,
-
-                color = Burgundy
-            )
-
-            Spacer(
-                modifier =
-                    Modifier.height(10.dp)
-            )
-
-            Text(
-
-                text =
-                    "📚 ${homework.lesson}",
-
-                modifier =
-                    Modifier.fillMaxWidth(),
-
-                textAlign =
-                    TextAlign.Center,
-
-                fontSize = 21.sp,
-
-                fontWeight =
-                    FontWeight.Bold
-            )
-
-            Text(
-
-                text =
-                    "سطح: ${homework.level}",
-
-                modifier =
-                    Modifier.fillMaxWidth(),
-
-                textAlign =
-                    TextAlign.Center,
-
-                color = DarkBurgundy
-            )
-
-            Spacer(
-                modifier =
-                    Modifier.height(18.dp)
-            )
-
-            Box(
-
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(
-                        RoundedCornerShape(18.dp)
-                    )
-                    .background(Color.White)
-                    .padding(18.dp)
-            ) {
-
-                Text(
-
-                    text =
-                        homework.text,
-
-                    modifier =
-                        Modifier.fillMaxWidth(),
-
-                    fontSize = 17.sp,
-
-                    lineHeight = 29.sp
-                )
-            }
-
-            Spacer(
-                modifier =
-                    Modifier.height(15.dp)
-            )
-
-            Text(
-
-                text =
-                    "🌟 با دقت و حوصله انجام بده 🌟",
-
-                modifier =
-                    Modifier.fillMaxWidth(),
-
-                textAlign =
-                    TextAlign.Center,
-
-                fontSize = 17.sp,
-
-                fontWeight =
-                    FontWeight.Bold,
-
-                color = Burgundy
-            )
-        }
-    }
-}
-
-
-// =========================
-// اشتراک‌گذاری
-// =========================
-
-fun shareHomework(
-    homework: Homework
-) {
-    // در این نسخه غیرفعال است.
-    // برای جلوگیری از خطای Context
-    // فعلاً هیچ عملی انجام نمی‌دهد.
-}
-
-
-// =========================
-// دفتر کلاسی
-// =========================
-
-@Composable
-fun ClassBookScreen(
-    storage: AppStorage,
-    onBack: () -> Unit
-) {
-
-    var records by remember {
-        mutableStateOf(
-            storage.getRecords()
-        )
-    }
-
-    var date by remember {
-
-        mutableStateOf(
-
-            SimpleDateFormat(
-                "yyyy/MM/dd",
-                Locale.getDefault()
-            ).format(Date())
-        )
-    }
-
-    var lesson by remember {
-        mutableStateOf("")
-    }
-
-    var activity by remember {
-        mutableStateOf("")
-    }
-
-    var homework by remember {
-        mutableStateOf("")
-    }
-
-    PageScaffold(
-        title = "دفتر کلاسی",
-        onBack = onBack
-    ) {
-
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(10.dp)
-        ) {
 
             item {
 
                 Text(
-                    text = "📖 دفتر کلاس",
-
-                    modifier =
-                        Modifier.fillMaxWidth(),
-
-                    textAlign =
-                        TextAlign.Center,
-
-                    fontSize = 25.sp,
-
-                    fontWeight =
-                        FontWeight.Bold,
-
+                    "تکلیف‌های ذخیره شده",
+                    fontWeight = FontWeight.Bold,
                     color = Burgundy
-                )
-
-                Spacer(
-                    modifier =
-                        Modifier.height(12.dp)
-                )
-
-                OutlinedTextField(
-
-                    value = date,
-
-                    onValueChange = {
-                        date = it
-                    },
-
-                    label = {
-                        Text("تاریخ")
-                    },
-
-                    modifier =
-                        Modifier.fillMaxWidth()
-                )
-
-                Spacer(
-                    modifier =
-                        Modifier.height(8.dp)
-                )
-
-                OutlinedTextField(
-
-                    value = lesson,
-
-                    onValueChange = {
-                        lesson = it
-                    },
-
-                    label = {
-                        Text("نام درس")
-                    },
-
-                    modifier =
-                        Modifier.fillMaxWidth()
-                )
-
-                Spacer(
-                    modifier =
-                        Modifier.height(8.dp)
-                )
-
-                OutlinedTextField(
-
-                    value = activity,
-
-                    onValueChange = {
-                        activity = it
-                    },
-
-                    label = {
-                        Text(
-                            "فعالیت و توضیحات درس"
-                        )
-                    },
-
-                    modifier =
-                        Modifier.fillMaxWidth()
-                )
-
-                Spacer(
-                    modifier =
-                        Modifier.height(8.dp)
-                )
-
-                OutlinedTextField(
-
-                    value = homework,
-
-                    onValueChange = {
-                        homework = it
-                    },
-
-                    label = {
-                        Text("تکلیف")
-                    },
-
-                    modifier =
-                        Modifier.fillMaxWidth()
-                )
-
-                Spacer(
-                    modifier =
-                        Modifier.height(10.dp)
-                )
-
-                Button(
-
-                    onClick = {
-
-                        if (
-                            lesson.isNotBlank() ||
-                            activity.isNotBlank() ||
-                            homework.isNotBlank()
-                        ) {
-
-                            records.add(
-
-                                ClassRecord(
-                                    date,
-                                    lesson,
-                                    activity,
-                                    homework
-                                )
-                            )
-
-                            storage.saveRecords(
-                                records
-                            )
-
-                            records =
-                                storage.getRecords()
-
-                            lesson = ""
-                            activity = ""
-                            homework = ""
-                        }
-                    },
-
-                    modifier =
-                        Modifier.fillMaxWidth()
-                ) {
-
-                    Text("ثبت در دفتر کلاس")
-                }
-
-                Spacer(
-                    modifier =
-                        Modifier.height(20.dp)
-                )
-
-                Text(
-                    text = "سوابق دفتر کلاس",
-
-                    fontSize = 20.sp,
-
-                    fontWeight =
-                        FontWeight.Bold,
-
-                    color = Burgundy
-                )
-
-                Spacer(
-                    modifier =
-                        Modifier.height(8.dp)
                 )
             }
 
-            items(records.reversed()) { record ->
+            items(homework) { item ->
 
                 Card(
-
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 5.dp),
-
-                    colors =
-                        CardDefaults.cardColors(
-                            containerColor =
-                                Color.White
-                        )
+                    modifier = Modifier.fillMaxWidth()
                 ) {
 
                     Column(
-                        modifier =
-                            Modifier.padding(14.dp)
+                        modifier = Modifier.padding(14.dp)
                     ) {
 
                         Text(
-                            text =
-                                "📅 ${record.date}",
-
-                            fontWeight =
-                                FontWeight.Bold,
-
-                            color = Burgundy
+                            item.title,
+                            fontWeight = FontWeight.Bold
                         )
 
                         Text(
-                            "📚 درس: ${record.lesson}"
+                            item.text
                         )
 
-                        Spacer(
-                            modifier =
-                                Modifier.height(5.dp)
-                        )
+                        Spacer(Modifier.height(8.dp))
 
-                        Text(
-                            "📝 فعالیت: ${record.activity}"
-                        )
+                        OutlinedButton(
+                            onClick = {
 
-                        Spacer(
-                            modifier =
-                                Modifier.height(5.dp)
-                        )
+                                shareText(
+                                    context,
+                                    "${item.title}\n\n${item.text}"
+                                )
+                            }
+                        ) {
 
-                        Text(
-                            "✏️ تکلیف: ${record.homework}"
-                        )
+                            Icon(
+                                Icons.Default.Send,
+                                contentDescription = null
+                            )
+
+                            Spacer(Modifier.width(5.dp))
+
+                            Text("ارسال / اشتراک‌گذاری")
+                        }
                     }
                 }
             }
@@ -2927,387 +2205,20 @@ fun ClassBookScreen(
     }
 }
 
-
-// =========================
-// گزارش‌ها
-// =========================
-
-@Composable
-fun ReportsScreen(
-    storage: AppStorage,
-    onBack: () -> Unit
+fun shareText(
+    context: Context,
+    text: String
 ) {
 
-    val students =
-        storage.getStudents()
-
-    val attendance =
-        storage.getAttendance()
-
-    val evaluations =
-        storage.getEvaluations()
-
-    val homework =
-        storage.getHomework()
-
-    PageScaffold(
-        title = "گزارش‌ها",
-        onBack = onBack
-    ) {
-
-        LazyColumn(
-
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(16.dp),
-
-            verticalArrangement =
-                Arrangement.spacedBy(12.dp)
-        ) {
-
-            item {
-
-                ReportCard(
-                    title =
-                        "👩‍🎓 تعداد دانش‌آموزان",
-
-                    value =
-                        students.size.toString()
-                )
-            }
-
-            item {
-
-                ReportCard(
-                    title =
-                        "📋 ثبت‌های حضور و غیاب",
-
-                    value =
-                        attendance.size.toString()
-                )
-            }
-
-            item {
-
-                ReportCard(
-                    title =
-                        "⭐ ارزشیابی‌های ثبت‌شده",
-
-                    value =
-                        evaluations.size.toString()
-                )
-            }
-
-            item {
-
-                ReportCard(
-                    title =
-                        "📝 تکالیف ذخیره‌شده",
-
-                    value =
-                        homework.size.toString()
-                )
-            }
-        }
-    }
-}
-
-
-// =========================
-// کارت گزارش
-// =========================
-
-@Composable
-fun ReportCard(
-    title: String,
-    value: String
-) {
-
-    Card(
-
-        modifier =
-            Modifier.fillMaxWidth(),
-
-        colors =
-            CardDefaults.cardColors(
-                containerColor =
-                    Color.White
-            )
-    ) {
-
-        Row(
-
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(20.dp),
-
-            horizontalArrangement =
-                Arrangement.SpaceBetween,
-
-            verticalAlignment =
-                Alignment.CenterVertically
-        ) {
-
-            Text(
-
-                text = title,
-
-                fontSize = 18.sp,
-
-                fontWeight =
-                    FontWeight.Bold
-            )
-
-            Text(
-
-                text = value,
-
-                fontSize = 28.sp,
-
-                color = Burgundy,
-
-                fontWeight =
-                    FontWeight.Bold
-            )
-        }
-    }
-}
-
-
-// =========================
-// صفحات ساده
-// =========================
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun SimpleInfoScreen(
-    title: String,
-    text: String,
-    icon: ImageVector,
-    onBack: () -> Unit
-) {
-
-    Scaffold(
-
-        topBar = {
-
-            TopAppBar(
-
-                title = {
-                    Text(title)
-                },
-
-                navigationIcon = {
-
-                    IconButton(
-                        onClick = onBack
-                    ) {
-
-                        Icon(
-
-                            imageVector =
-                                Icons.Default.ArrowBack,
-
-                            contentDescription =
-                                "بازگشت"
-                        )
-                    }
-                }
-            )
-        }
-
-    ) { padding ->
-
-        Column(
-
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Cream)
-                .padding(padding)
-                .padding(25.dp),
-
-            horizontalAlignment =
-                Alignment.CenterHorizontally
-        ) {
-
-            Icon(
-
-                imageVector = icon,
-
-                contentDescription =
-                    title,
-
-                tint = Burgundy,
-
-                modifier =
-                    Modifier.size(80.dp)
-            )
-
-            Spacer(
-                modifier =
-                    Modifier.height(20.dp)
-            )
-
-            Text(
-
-                text = title,
-
-                fontSize = 27.sp,
-
-                fontWeight =
-                    FontWeight.Bold,
-
-                color = Burgundy
-            )
-
-            Spacer(
-                modifier =
-                    Modifier.height(15.dp)
-            )
-
-            Text(
-
-                text = text,
-
-                fontSize = 18.sp,
-
-                textAlign =
-                    TextAlign.Center
-            )
-        }
-    }
-}
-
-
-// =========================
-// پشتیبان‌گیری
-// =========================
-
-@Composable
-fun BackupScreen(
-    storage: AppStorage,
-    onBack: () -> Unit
-) {
-
-    var backupText by remember {
-        mutableStateOf("")
+    val intent = Intent(Intent.ACTION_SEND).apply {
+        type = "text/plain"
+        putExtra(Intent.EXTRA_TEXT, text)
     }
 
-    var message by remember {
-        mutableStateOf("")
-    }
-
-    PageScaffold(
-        title = "پشتیبان‌گیری",
-        onBack = onBack
-    ) {
-
-        Column(
-
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(16.dp)
-        ) {
-
-            Button(
-
-                onClick = {
-
-                    backupText =
-                        storage.makeBackup()
-
-                    message =
-                        "نسخه پشتیبان ساخته شد."
-                },
-
-                modifier =
-                    Modifier.fillMaxWidth()
-            ) {
-
-                Text(
-                    "ساخت نسخه پشتیبان"
-                )
-            }
-
-            Spacer(
-                modifier =
-                    Modifier.height(10.dp)
-            )
-
-            OutlinedTextField(
-
-                value = backupText,
-
-                onValueChange = {
-                    backupText = it
-                },
-
-                label = {
-                    Text("متن پشتیبان")
-                },
-
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f)
-            )
-
-            Spacer(
-                modifier =
-                    Modifier.height(10.dp)
-            )
-
-            Button(
-
-                onClick = {
-
-                    try {
-
-                        storage.restoreBackup(
-                            backupText
-                        )
-
-                        message =
-                            "اطلاعات با موفقیت بازیابی شد."
-
-                    } catch (e: Exception) {
-
-                        message =
-                            "متن پشتیبان صحیح نیست."
-                    }
-                },
-
-                modifier =
-                    Modifier.fillMaxWidth()
-            ) {
-
-                Text(
-                    "بازیابی اطلاعات"
-                )
-            }
-
-            if (message.isNotBlank()) {
-
-                Spacer(
-                    modifier =
-                        Modifier.height(10.dp)
-                )
-
-                Text(
-
-                    text = message,
-
-                    modifier =
-                        Modifier.fillMaxWidth(),
-
-                    textAlign =
-                        TextAlign.Center,
-
-                    color = Burgundy,
-
-                    fontWeight =
-                        FontWeight.Bold
-                )
-            }
-        }
-    }
+    context.startActivity(
+        Intent.createChooser(
+            intent,
+            "اشتراک‌گذاری"
+        )
+    )
 }
